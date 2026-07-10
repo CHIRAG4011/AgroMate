@@ -1,0 +1,72 @@
+{
+  "status": "success",
+  "weather": {
+    "temperature": 14.2,
+    "feels_like": 12.2,
+    "humidity": 88,
+    "pressure": 1013.4,
+    "wind_speed": 18.5,
+    "wind_direction": 278,
+    "description": "mainly clear",
+    "icon": "02d",
+    "clouds": 40,
+    "rain_mm": 0.0,
+    "visibility": 15400.0,
+    "location": "San Francisco",
+    "timestamp": "2026-06-26T14:50:56.408624+00:00",
+    "is_openmeteo": true
+  },
+  "forecast": [
+    {
+      "datetime": "2026-06-26",
+      "temperature": 15.399999999999999,
+      "humidity": 65,
+      "description": "foggy",
+      "rain_mm": 0.0,
+      "wind_speed": 25.0
+    },
+    {
+      "datetime": "2026-06-27",
+      "temperature": 15.25,
+      "humidity": 65,
+      "description": "drizzle",
+      "rain_mm": 0.7,
+      "wind_speed": 32.9
+    },
+    {
+      "datetime": "2026-06-28",
+      "temperature": 15.85,
+      "humidity": 65,
+      "description": "clear sky",
+      "rain_mm": 0.0,
+      "wind_speed": 20.7
+    },
+    {
+      "datetime": "2026-06-29",
+      "temperature": 15.65,
+      "humidity": 65,
+      "description": "overcast",
+      "rain_mm": 0.0,
+      "wind_speed": 26.4
+    },
+    {
+      "datetime": "2026-06-30",
+      "temperature": 16.85,
+      "humidity": 65,
+      "description": "overcast",
+      "rain_mm": 0.0,
+      "wind_speed": 29.8
+    }
+  ],
+  "advisory": {
+    "advisories": [
+      "💧 High humidity — watch for fungal diseases, improve air circulation",
+      "☀️ No rain — maintain regular irrigation schedule",
+      "🍃 Moderate wind — avoid pesticide application, secure greenhouse covers"
+    ],
+    "risk_level": "moderate",
+    "good_for_spraying": false,
+    "spraying_note": "Avoid spraying — conditions unfavorable",
+    "irrigation_note": "Irrigate as scheduled"
+  }
+}

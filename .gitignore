@@ -1,0 +1,82 @@
+# ============================================
+# AgroMate .gitignore
+# Python + PlatformIO + Android + Data
+# ============================================
+
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.whl
+venv/
+.venv/
+env/
+.env
+*.log
+
+# ---------- PlatformIO ----------
+.pio/
+.pioenvs/
+.piolibdeps/
+.clang_complete
+.gcc-flags.json
+
+# ---------- Arduino ----------
+*.elf
+*.bin
+*.hex
+*.map
+
+# ---------- Android ----------
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/*.iml
+android/.idea/
+android/captures/
+android/.externalNativeBuild/
+android/.cxx/
+*.apk
+*.aab
+*.jks
+*.keystore
+
+# ---------- IDE ----------
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------- Data & Models ----------
+datasets/
+models/
+*.tflite
+*.onnx
+*.h5
+*.pt
+*.pth
+*.pkl
+*.joblib
+
+# ---------- Media ----------
+*.wav
+*.mp3
+*.ogg
+
+# ---------- Secrets ----------
+.env
+.env.*
+!.env.example
+secrets/
+*.pem
+*.key

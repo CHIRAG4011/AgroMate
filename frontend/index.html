@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="AgroMate AI Dashboard — Manage your farming robots, scan plants, chat with AI, and monitor analytics from your laptop.">
+  <title>AgroMate — AI Farm Dashboard</title>
+  
+  <!-- Favicon -->
+  <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
+  
+  <!-- Google Fonts: Inter + Noto Sans (all Indian scripts) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Noto+Sans:wght@300;400;500;600;700&family=Noto+Sans+Devanagari:wght@400;500;600;700&family=Noto+Sans+Gujarati:wght@400;500;600;700&family=Noto+Sans+Tamil:wght@400;500;600;700&family=Noto+Sans+Telugu:wght@400;500;600;700&family=Noto+Sans+Bengali:wght@400;500;600;700&family=Noto+Sans+Kannada:wght@400;500;600;700&family=Noto+Sans+Malayalam:wght@400;500;600;700&family=Noto+Sans+Gurmukhi:wght@400;500;600;700&family=Noto+Sans+Oriya:wght@400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- Styles -->
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="app-layout" id="app">
+    
+    <!-- ── Mobile Header ── -->
+    <div class="mobile-header">
+      <div class="hamburger" id="hamburgerBtn" onclick="toggleSidebar()">
+        <span></span><span></span><span></span>
+      </div>
+      <div class="mobile-logo-group">
+        <img src="assets/logo.svg" alt="AgroMate" class="mobile-logo-img">
+        <span class="mobile-title" data-i18n="nav_dashboard">AgroMate</span>
+      </div>
+      <!-- Language Quick Switch -->
+      <button class="lang-switch-btn" id="langSwitchBtn" onclick="showLanguagePicker()" title="Change Language">
+        <span id="currentLangFlag">🌐</span>
+      </button>
+    </div>
+
+    <!-- ── Sidebar Overlay (mobile) ── -->
+    <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
+    <!-- ── Sidebar ── -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-logo">
+        <img src="assets/logo.svg" alt="AgroMate">
+        <span class="logo-text">AgroMate</span>
+        <span class="logo-badge">V2</span>
+      </div>
+
+      <nav class="sidebar-nav" id="sidebarNav">
+        <div class="nav-item active" data-page="dashboard" onclick="navigateTo('dashboard')">
+          <span class="nav-icon">📊</span>
+          <span class="nav-label" data-i18n="nav_dashboard">Dashboard</span>
+        </div>
+        <div class="nav-item" data-page="chat" onclick="navigateTo('chat')">
+          <span class="nav-icon">💬</span>
+          <span class="nav-label" data-i18n="nav_chat">AI Chat</span>
+        </div>
+        <div class="nav-item" data-page="scan" onclick="navigateTo('scan')">
+          <span class="nav-icon">🔬</span>
+          <span class="nav-label" data-i18n="nav_scan">Scan & Diagnose</span>
+        </div>
+        <div class="nav-item" data-page="weather" onclick="navigateTo('weather')">
+          <span class="nav-icon">🌦️</span>
+          <span class="nav-label" data-i18n="nav_weather">Weather</span>
+        </div>
+        
+        <div class="nav-divider"></div>
+        
+        <div class="nav-item" data-page="robots" onclick="navigateTo('robots')">
+          <span class="nav-icon">🤖</span>
+          <span class="nav-label" data-i18n="nav_robots">Robot Manager</span>
+        </div>
+        <div class="nav-item" data-page="history" onclick="navigateTo('history')">
+          <span class="nav-icon">📋</span>
+          <span class="nav-label" data-i18n="nav_history">Scan History</span>
+        </div>
+        <div class="nav-item" data-page="analytics" onclick="navigateTo('analytics')">
+          <span class="nav-icon">📈</span>
+          <span class="nav-label" data-i18n="nav_analytics">Analytics</span>
+        </div>
+        <div class="nav-item" data-page="knowledge" onclick="navigateTo('knowledge')">
+          <span class="nav-icon">📚</span>
+          <span class="nav-label" data-i18n="nav_knowledge">Knowledge Base</span>
+        </div>
+        
+        <div class="nav-divider"></div>
+        
+        <div class="nav-item" data-page="settings" onclick="navigateTo('settings')">
+          <span class="nav-icon">⚙️</span>
+          <span class="nav-label" data-i18n="nav_settings">Settings</span>
+        </div>
+      </nav>
+
+      <div class="sidebar-footer">
+        <!-- Voice Control Indicator -->
+        <div class="voice-indicator" id="voiceControlIndicator" style="margin-bottom: var(--space-sm); display: flex; width: fit-content;">
+          <span>🎤 Voice Active</span>
+        </div>
+        <!-- Offline Mode Indicator -->
+        <div class="offline-indicator hidden" id="offlineIndicator">
+          <div class="offline-dot"></div>
+          <span data-i18n="offline_mode">Offline Mode</span>
+        </div>
+        <!-- Server Status -->
+        <div class="server-status">
+          <div class="status-dot" id="serverStatusDot"></div>
+          <span id="serverStatusText" data-i18n="server_online">Server Online</span>
+        </div>
+      </div>
+    </aside>
+
+    <!-- ── Main Content ── -->
+    <main class="main-content" id="mainContent">
+      <div class="page-container" id="pageContainer">
+        <!-- Dynamic page content rendered here -->
+      </div>
+    </main>
+
+    <!-- ── Floating AI Assistant Button ── -->
+    <button class="fab-ai" id="fabAI" onclick="navigateTo('chat')" title="AI Assistant">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 2a3 3 0 0 0-3 3v1a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/>
+        <path d="M19 10H5a2 2 0 0 0-2 2v1a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-1a2 2 0 0 0-2-2Z"/>
+        <path d="M12 15v5"/>
+        <path d="M8 20h8"/>
+      </svg>
+      <div class="fab-pulse"></div>
+    </button>
+
+    <!-- ── TTS Playback Controls Bar ── -->
+    <div class="tts-player-bar hidden" id="ttsPlayerBar">
+      <div class="tts-player-content">
+        <span class="tts-player-label" id="ttsPlayerLabel">Speaking...</span>
+        <div class="tts-player-controls">
+          <button class="tts-btn" onclick="ttsPlayer.replay()" title="Replay">⏮</button>
+          <button class="tts-btn tts-btn-primary" id="ttsPlayPauseBtn" onclick="ttsPlayer.togglePlayPause()" title="Pause">⏸</button>
+          <button class="tts-btn" onclick="ttsPlayer.stop()" title="Stop">⏹</button>
+        </div>
+        <div class="tts-progress" id="ttsProgress">
+          <div class="tts-progress-bar" id="ttsProgressBar"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Language Picker Modal ── -->
+    <div class="modal-overlay hidden" id="langPickerOverlay" onclick="hideLanguagePicker()">
+      <div class="modal-content lang-picker-modal" onclick="event.stopPropagation()">
+        <h3>🌐 <span data-i18n="settings_language">Select Language</span></h3>
+        <div class="lang-grid" id="langGrid">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Scripts ── -->
+  <script src="js/app.js"></script>
+  <script src="js/pages/dashboard.js"></script>
+  <script src="js/pages/chat.js"></script>
+  <script src="js/pages/scan.js"></script>
+  <script src="js/pages/robots.js"></script>
+  <script src="js/pages/history.js"></script>
+  <script src="js/pages/analytics.js"></script>
+  <script src="js/pages/settings.js"></script>
+  <script src="js/pages/weather.js"></script>
+  <script src="js/pages/knowledge.js"></script>
+</body>
+</html>

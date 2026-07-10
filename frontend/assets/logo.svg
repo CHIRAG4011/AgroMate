@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 50" fill="none">
+  <defs>
+    <linearGradient id="leafGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#22c55e"/>
+      <stop offset="100%" style="stop-color:#16a34a"/>
+    </linearGradient>
+    <linearGradient id="gearGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#f59e0b"/>
+      <stop offset="100%" style="stop-color:#d97706"/>
+    </linearGradient>
+  </defs>
+  <!-- Leaf icon -->
+  <path d="M10 40 C10 20, 25 8, 40 8 C35 15, 30 22, 25 30 C22 25, 18 20, 15 18 C12 25, 10 32, 10 40Z" fill="url(#leafGrad)"/>
+  <!-- Gear accent -->
+  <circle cx="32" cy="20" r="5" fill="url(#gearGrad)" opacity="0.8"/>
+  <circle cx="32" cy="20" r="2.5" fill="#1a1d2e"/>
+  <!-- Text -->
+  <text x="50" y="22" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="20" fill="#e2e8f0">Agro</text>
+  <text x="100" y="22" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="20" fill="#22c55e">Mate</text>
+  <text x="50" y="38" font-family="Inter, system-ui, sans-serif" font-weight="400" font-size="10" fill="#94a3b8" letter-spacing="3">AI FARM ASSISTANT</text>
+</svg>
