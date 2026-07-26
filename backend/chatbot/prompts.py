@@ -199,8 +199,14 @@ def build_context_prompt(
     # Response type instruction
     if response_type == "detailed":
         context_parts.append(DETAILED_RESPONSE_PROMPT)
-    else:
+    elif scan_data:
         context_parts.append(SHORT_RESPONSE_PROMPT)
+    else:
+        context_parts.append("""IMPORTANT INSTRUCTIONS FOR GENERAL CHAT:
+Provide a clear, detailed, and comprehensive answer to the farmer's question.
+- Format your response with clean markdown headings (###, ##), bullet points, and numbered lists where appropriate.
+- Include practical step-by-step guidance, quantities, timing, and both organic & chemical options.
+- Keep the tone warm, respectful, and helpful. Do NOT limit your answer to a short 2-sentence summary unless specifically asked to keep it brief.""")
 
     # Knowledge base context
     if kb_results:

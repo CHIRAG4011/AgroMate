@@ -157,7 +157,7 @@ class ChatbotEngine:
         # Set response metadata
         response.response_type = response_type
         response.language = language
-        response.has_detailed = bool(scan_context or self._session_context.get(session_id))
+        response.has_detailed = True
         
         # For summary responses, store the text as short_summary
         if response_type == "summary":

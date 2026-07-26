@@ -1,4 +1,4 @@
-﻿"""
+"""
 AgroMate Backend — Main FastAPI Application
 
 Entry point for the laptop AI server. Initializes all services,
@@ -167,11 +167,10 @@ def _setup_ble_pipeline(server: BLEServer, logger):
             common_name     = scan_result.get("plant_name", "Unknown Plant")
             scientific_name = scan_result.get("scientific_name", "N/A")
             confidence      = float(scan_result.get("confidence", 0.0)) * 100
-            is_healthy      = bool(scan_result.get("is_healthy", True))
             issue           = scan_result.get("disease_name", "Healthy")
-            if not issue or issue.lower() in ("none", ""):
+            is_healthy      = _resolve_is_healthy(scan_result)
+            if is_healthy:
                 issue = "Healthy"
-                is_healthy = True
 
             scan_context = {
                 "scan_type":        "disease" if not is_healthy else "identification",

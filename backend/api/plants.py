@@ -57,9 +57,17 @@ async def _save_scan_to_db(image_data: bytes, scan_type: str, result_dict: dict)
                 treatment = ""
                 organic_treatment = ""
             elif scan_type == "diagnose":
-                is_healthy = result_dict.get("is_healthy", True)
-                disease_name = result_dict.get("disease_name") or ("Healthy" if is_healthy else "Unknown Disease")
-                severity = result_dict.get("severity") or ("none" if is_healthy else "mild")
+                disease_name = result_dict.get("disease_name", "").strip()
+                raw_healthy = result_dict.get("is_healthy")
+                if disease_name and disease_name.lower() not in ("healthy", "none", "n/a", "", "null"):
+                    is_healthy = False
+                elif raw_healthy is not None:
+                    is_healthy = (str(raw_healthy).lower().strip() in ("true", "1", "yes", "healthy")) if isinstance(raw_healthy, str) else bool(raw_healthy)
+                else:
+                    is_healthy = True
+                if not disease_name:
+                    disease_name = "Healthy" if is_healthy else "Diseased Plant"
+                severity = result_dict.get("severity") or ("none" if is_healthy else "moderate")
                 treatment = result_dict.get("treatment", "")
                 organic_treatment = result_dict.get("organic_treatment", "")
             elif scan_type == "pests":

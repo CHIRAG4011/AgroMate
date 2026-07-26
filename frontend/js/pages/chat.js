@@ -217,6 +217,17 @@ async function sendChatMessage() {
   updateChatWindow();
 }
 
+function getFirstParagraph(text) {
+  if (!text) return '';
+  let clean = text.replace(/^#+\s+/gm, '').trim();
+  let parts = clean.split(/\n\s*\n|\n(?=[#-]\s|\d+\.)/);
+  for (let p of parts) {
+    let line = p.trim().replace(/^[\*\-\#\>\d\.\s]+/, '').trim();
+    if (line.length > 15) return line;
+  }
+  return text.substring(0, 180);
+}
+
 async function fetchMoreDetails(index) {
   ttsPlayer.stop();
   chatIsLoading = true;
@@ -237,8 +248,9 @@ async function fetchMoreDetails(index) {
       chatMessages[index].content = resp.text;
       chatMessages[index].response_type = 'detailed';
       
-      // Play report using structured audio synthesizer sections
-      ttsPlayer.playSections(resp.text, currentLanguage);
+      // Read ONLY 1st paragraph aloud for detailed response as requested
+      const firstParah = getFirstParagraph(resp.text);
+      ttsPlayer.play(firstParah, currentLanguage);
     }
   } catch (err) {
     chatIsLoading = false;
@@ -266,7 +278,8 @@ function speakMessage(index) {
   if (!msg) return;
   
   if (msg.response_type === 'detailed') {
-    ttsPlayer.playSections(msg.content, currentLanguage);
+    const firstParah = getFirstParagraph(msg.content);
+    ttsPlayer.play(firstParah, currentLanguage);
   } else {
     ttsPlayer.play(msg.content, currentLanguage);
   }

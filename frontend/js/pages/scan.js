@@ -97,9 +97,19 @@ function renderScanPlaceholder() {
 }
 
 function checkIsHealthy(res) {
-  return res.is_healthy !== false && 
-         res.deficiency_detected !== true && 
-         (res.pest_name === undefined || res.pest_name === "None" || res.pest_name === "");
+  if (!res) return true;
+  const disease = String(res.disease_name || res.issue_detected || '').trim();
+  const pest = String(res.pest_name || '').trim();
+  const deficiency = String(res.primary_deficiency || '').trim();
+
+  for (let issue of [disease, pest, deficiency]) {
+    if (issue && !['healthy', 'none', 'n/a', '', 'null'].includes(issue.toLowerCase())) {
+      return false;
+    }
+  }
+  if (res.deficiency_detected === true) return false;
+  if (res.is_healthy === false || res.is_healthy === 'false' || res.is_healthy === 'False') return false;
+  return true;
 }
 
 function renderScanResult() {
@@ -380,26 +390,25 @@ async function autoTriggerScan() {
 }
 
 function generateShortTtsSummary(res) {
+  if (!res) return 'Scan complete';
   const isHealthy = checkIsHealthy(res);
   const plant = res.plant_name || 'plant';
   
   if (scanMode === 'identify') {
-    return i18n.t('plant_identified', {
-      plant_name: plant,
-      confidence: Math.round(res.confidence * 100)
-    });
+    const sci = res.scientific_name ? ` (scientific name: ${res.scientific_name})` : '';
+    return `Identified ${plant}${sci} with ${Math.round((parseFloat(res.confidence)||0.9)*100)} percent confidence.`;
   }
 
   if (isHealthy) {
-    return i18n.t('healthy_plant');
+    return `The ${plant} appears healthy with no visible diseases or pests. Continue regular watering and maintenance.`;
   }
 
-  const issue = res.disease_name || res.pest_name || res.primary_deficiency || 'stress';
-  return i18n.t('disease_detected', {
-    plant_name: plant,
-    disease_name: issue,
-    severity: res.severity || 'mild'
-  });
+  const issue = res.disease_name || res.pest_name || res.primary_deficiency || 'disease';
+  const severity = res.severity || 'moderate';
+  const treatment = res.organic_treatment || res.treatment || '';
+  const treatText = treatment ? `. Recommended treatment: ${treatment}` : '';
+
+  return `${plant} diagnosed with ${issue}, severity ${severity}${treatText}.`;
 }
 
 function toggleScanSpeech() {
