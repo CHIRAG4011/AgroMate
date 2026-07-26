@@ -1,12 +1,12 @@
-/**
- * AgroMate ESP32-S3 Firmware — Production Build
+﻿/**
+ * AgroMate ESP32-S3 Firmware Ã¢â‚¬â€ Production Build
  * 
  * Features:
  *   - Animated boot screen with progress bar
  *   - Expressive AI face with smooth eye animations at 30 FPS
  *   - Dashboard screen with real-time system stats (flicker-free)
  *   - Status bar overlay showing time, FPS, expression name
- *   - BOOT button (interrupt-driven) cycles: Face ↔ Dashboard
+ *   - BOOT button (interrupt-driven) cycles: Face Ã¢â€ â€ Dashboard
  *   - NimBLE Bluetooth peripheral connectivity
  *   - Parallel OV7670 camera capture with live LCD preview
  *   - Time-Multiplexed I2S Audio: recording via INMP441 & playback via MAX98357A
@@ -40,7 +40,7 @@ int simple_vprintf(const char* fmt, va_list args) {
 #include "audio/AudioManager.h"
 #include "leds/LEDManager.h"
 
-// ── Global instances ──
+// Ã¢â€â‚¬Ã¢â€â‚¬ Global instances Ã¢â€â‚¬Ã¢â€â‚¬
 DisplayManager display;
 FaceRenderer face;
 AgroMateBLE ble;
@@ -48,7 +48,7 @@ CameraManager camera;
 AudioManager audio;
 LEDManager leds;
 
-// ── Screen modes ──
+// Ã¢â€â‚¬Ã¢â€â‚¬ Screen modes Ã¢â€â‚¬Ã¢â€â‚¬
 enum class ScreenMode : uint8_t {
     BOOT = 0,
     FACE = 1,
@@ -62,14 +62,14 @@ ScreenMode currentScreen = ScreenMode::BOOT;
 String latestAiResult = "";
 bool resultDrawn = false;
 
-// ── Timing ──
+// Ã¢â€â‚¬Ã¢â€â‚¬ Timing Ã¢â€â‚¬Ã¢â€â‚¬
 unsigned long lastFrameTime = 0;
 unsigned long frameCount = 0;
 float currentFPS = 0;
 unsigned long fpsTimer = 0;
 const unsigned long FRAME_INTERVAL = 1000 / DISPLAY_FPS;
 
-// ── Demo mode (active only when BLE is disconnected) ──
+// Ã¢â€â‚¬Ã¢â€â‚¬ Demo mode (active only when BLE is disconnected) Ã¢â€â‚¬Ã¢â€â‚¬
 bool demoMode = true;
 unsigned long lastExprChange = 0;
 const unsigned long EXPR_CHANGE_INTERVAL = 8000;  // Change expression every 8s
@@ -98,36 +98,36 @@ const Expression demoSequence[] = {
 };
 const uint8_t DEMO_SEQ_LEN = sizeof(demoSequence) / sizeof(demoSequence[0]);
 
-// ── Boot button polling ──
+// Ã¢â€â‚¬Ã¢â€â‚¬ Boot button polling Ã¢â€â‚¬Ã¢â€â‚¬
 #define BTN_PIN 0
 bool lastButtonState = HIGH;
 unsigned long lastBtnDebounce = 0;
 const unsigned long BTN_DEBOUNCE_MS = 250;
 uint8_t btnPressCount = 0;
 
-// ── Dashboard data ──
+// Ã¢â€â‚¬Ã¢â€â‚¬ Dashboard data Ã¢â€â‚¬Ã¢â€â‚¬
 unsigned long bootTime = 0;
 bool dashboardDrawn = false; // Tracks whether static dashboard elements have been drawn
 
-// ── NVS Persistent Scan Counter ──
+// Ã¢â€â‚¬Ã¢â€â‚¬ NVS Persistent Scan Counter Ã¢â€â‚¬Ã¢â€â‚¬
 Preferences nvsPrefs;
 uint32_t totalScanCount = 0;
 uint32_t diseasesFound = 0;
 
-// ── Weather data (synced from backend via BLE) ──
+// Ã¢â€â‚¬Ã¢â€â‚¬ Weather data (synced from backend via BLE) Ã¢â€â‚¬Ã¢â€â‚¬
 float weatherTemp = 0.0f;
 int weatherHumidity = 0;
 char weatherForecast[32] = "No Data";
 bool weatherSynced = false;
 
-// ── Hardware init status (set during boot) ──
+// Ã¢â€â‚¬Ã¢â€â‚¬ Hardware init status (set during boot) Ã¢â€â‚¬Ã¢â€â‚¬
 bool hwCameraOk = false;
 bool hwMicOk = false;
 bool hwSpeakerOk = false;
 bool hwLedsOk = false;
 bool hwBleOk = false;
 
-// ── Color palette (matching FaceRenderer) ──
+// Ã¢â€â‚¬Ã¢â€â‚¬ Color palette (matching FaceRenderer) Ã¢â€â‚¬Ã¢â€â‚¬
 #define UI_BG        0x0000  // Black
 #define UI_DARK_GRAY 0x0841
 #define UI_MID_GRAY  0x4208
@@ -144,7 +144,7 @@ bool hwBleOk = false;
 #define UI_LIGHT_GRAY 0xC618
 #define UI_AMBER      0xFE60
 
-// ── Forward declarations ──
+// Ã¢â€â‚¬Ã¢â€â‚¬ Forward declarations Ã¢â€â‚¬Ã¢â€â‚¬
 void drawHomeScreen();
 void drawBootScreen(float progress, const char* status);
 void drawDashboardStatic();
@@ -158,9 +158,9 @@ void handleBLECommand(uint8_t* data, size_t length);
 void yuv422_to_rgb565_fast(const uint8_t* yuv, uint16_t* rgb, int width, int height);
 void runScanPreview();
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â
 //  YUV422 to RGB565 conversion (Fast Integer implementation)
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â
 void yuv422_to_rgb565_fast(const uint8_t* yuv, uint16_t* rgb, int width, int height) {
     int size = width * height;
     for (int i = 0; i < size; i += 2) {
@@ -189,11 +189,11 @@ void yuv422_to_rgb565_fast(const uint8_t* yuv, uint16_t* rgb, int width, int hei
     }
 }
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â
 //  Live Camera Scanning Preview & Capture
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//  Run Scan Preview — Simplified Scanning Screen
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â
+//  Run Scan Preview Ã¢â‚¬â€ Simplified Scanning Screen
+// Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â
 void runScanPreview() {
     TFT_eSPI* tft = display.getTFT();
     tft->fillScreen(UI_BG);
@@ -219,7 +219,7 @@ void runScanPreview() {
     camera.warmupSuccessCount = 0;
     camera.warmupFailCount = 0;
     
-    // Warm up camera for 2 seconds — flush old frames, let auto-exposure adjust
+    // Warm up camera for 2 seconds Ã¢â‚¬â€ flush old frames, let auto-exposure adjust
     unsigned long startTime = millis();
     while (millis() - startTime < 2000) {
         camera_fb_t* fb = camera.captureRaw();
@@ -252,7 +252,7 @@ void runScanPreview() {
     uint8_t* finalJpg = camera.capture(&finalJpgSize);
     
     if (finalJpg && finalJpgSize > 0) {
-        // SUCCESS — show analyzing screen and send
+        // SUCCESS Ã¢â‚¬â€ show analyzing screen and send
         tft->fillScreen(UI_BG);
         tft->drawRoundRect(20, 40, SCREEN_WIDTH - 40, SCREEN_HEIGHT - 80, 8, UI_CYAN);
         tft->fillRect(21, 41, SCREEN_WIDTH - 42, 30, UI_DARK_BLUE);
@@ -274,7 +274,7 @@ void runScanPreview() {
         // Switch back to face mode to prevent infinite scan loop
         currentScreen = ScreenMode::FACE;
     } else {
-        // FAILURE — show detailed diagnostic info on screen
+        // FAILURE Ã¢â‚¬â€ show detailed diagnostic info on screen
         tft->fillScreen(UI_BG);
         tft->drawRoundRect(20, 20, SCREEN_WIDTH - 40, SCREEN_HEIGHT - 40, 8, UI_RED);
         tft->fillRect(21, 21, SCREEN_WIDTH - 42, 30, 0x8000); // Dark red header
@@ -332,9 +332,9 @@ void runScanPreview() {
     tft->fillScreen(UI_BG);
 }
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â
 //  BLE Command Callback Processor
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â
 void handleBLECommand(uint8_t* data, size_t length) {
     if (length == 0) return;
     uint8_t cmdType = data[0];
@@ -421,7 +421,7 @@ void handleBLECommand(uint8_t* data, size_t length) {
                     }
                     Serial.printf("[BLE] Weather synced: %.1fC, %d%%, %s\n", weatherTemp, weatherHumidity, weatherForecast);
                 } else if (mode == 3) {
-                    // Disease detected — increment disease counter
+                    // Disease detected Ã¢â‚¬â€ increment disease counter
                     diseasesFound++;
                     nvsPrefs.putUInt("diseases", diseasesFound);
                     if (currentScreen == ScreenMode::DASHBOARD) {
@@ -453,9 +453,9 @@ void handleBLECommand(uint8_t* data, size_t length) {
     }
 }
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//  Boot Screen — Animated startup with progress bar
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â
+//  Boot Screen Ã¢â‚¬â€ Animated startup with progress bar
+// Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â
 void drawBootScreen(float progress, const char* status) {
     TFT_eSPI* tft = display.getTFT();
     
@@ -533,16 +533,16 @@ void drawBootScreen(float progress, const char* status) {
     tft->drawString(status, cx, barY + barH + 30);
 }
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//  Dashboard Screen — Static elements (drawn once)
+// Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â
+//  Dashboard Screen Ã¢â‚¬â€ Static elements (drawn once)
 //  Professional 4-card layout: Stats | Weather | Hardware | System
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â
 void drawDashboardStatic() {
     TFT_eSPI* tft = display.getTFT();
     
     tft->fillScreen(UI_BG);
     
-    // ── Header Bar ──
+    // Ã¢â€â‚¬Ã¢â€â‚¬ Header Bar Ã¢â€â‚¬Ã¢â€â‚¬
     tft->fillRect(0, 0, SCREEN_WIDTH, 32, UI_DARK_GRAY);
     tft->drawFastHLine(0, 32, SCREEN_WIDTH, UI_CYAN);
     tft->drawFastHLine(0, 33, SCREEN_WIDTH, UI_DARK_CYAN);
@@ -560,7 +560,7 @@ void drawDashboardStatic() {
     int row1Y = 42;
     int row2Y = 148;
     
-    // ── Card 1: SCAN STATISTICS ──
+    // Ã¢â€â‚¬Ã¢â€â‚¬ Card 1: SCAN STATISTICS Ã¢â€â‚¬Ã¢â€â‚¬
     tft->drawRoundRect(cardX1, row1Y, cardW, cardH, 5, UI_GREEN);
     tft->fillRect(cardX1 + 1, row1Y + 1, cardW - 2, 20, UI_DARK_GRAY);
     tft->drawFastHLine(cardX1 + 1, row1Y + 21, cardW - 2, UI_GREEN);
@@ -569,21 +569,21 @@ void drawDashboardStatic() {
     tft->setTextColor(UI_GREEN, UI_DARK_GRAY);
     tft->drawString(" SCAN STATISTICS", cardX1 + 6, row1Y + 5);
     
-    // ── Card 2: WEATHER ──
+    // Ã¢â€â‚¬Ã¢â€â‚¬ Card 2: WEATHER Ã¢â€â‚¬Ã¢â€â‚¬
     tft->drawRoundRect(cardX2, row1Y, cardW, cardH, 5, UI_YELLOW);
     tft->fillRect(cardX2 + 1, row1Y + 1, cardW - 2, 20, UI_DARK_GRAY);
     tft->drawFastHLine(cardX2 + 1, row1Y + 21, cardW - 2, UI_YELLOW);
     tft->setTextColor(UI_YELLOW, UI_DARK_GRAY);
     tft->drawString(" WEATHER", cardX2 + 6, row1Y + 5);
     
-    // ── Card 3: HARDWARE STATUS ──
+    // Ã¢â€â‚¬Ã¢â€â‚¬ Card 3: HARDWARE STATUS Ã¢â€â‚¬Ã¢â€â‚¬
     tft->drawRoundRect(cardX1, row2Y, cardW, cardH, 5, UI_ORANGE);
     tft->fillRect(cardX1 + 1, row2Y + 1, cardW - 2, 20, UI_DARK_GRAY);
     tft->drawFastHLine(cardX1 + 1, row2Y + 21, cardW - 2, UI_ORANGE);
     tft->setTextColor(UI_ORANGE, UI_DARK_GRAY);
     tft->drawString(" HARDWARE STATUS", cardX1 + 6, row2Y + 5);
     
-    // Hardware status rows (static — real init flags)
+    // Hardware status rows (static Ã¢â‚¬â€ real init flags)
     tft->setTextDatum(TL_DATUM);
     tft->setTextSize(1);
     
@@ -620,14 +620,14 @@ void drawDashboardStatic() {
     tft->setTextColor(UI_WHITE, UI_BG);
     tft->drawString("BLE Init", cardX1 + 152, hwY);
     
-    // ── Card 4: SYSTEM ──
+    // Ã¢â€â‚¬Ã¢â€â‚¬ Card 4: SYSTEM Ã¢â€â‚¬Ã¢â€â‚¬
     tft->drawRoundRect(cardX2, row2Y, cardW, cardH, 5, UI_CYAN);
     tft->fillRect(cardX2 + 1, row2Y + 1, cardW - 2, 20, UI_DARK_GRAY);
     tft->drawFastHLine(cardX2 + 1, row2Y + 21, cardW - 2, UI_CYAN);
     tft->setTextColor(UI_CYAN, UI_DARK_GRAY);
     tft->drawString(" SYSTEM", cardX2 + 6, row2Y + 5);
     
-    // ── Footer ──
+    // Ã¢â€â‚¬Ã¢â€â‚¬ Footer Ã¢â€â‚¬Ã¢â€â‚¬
     int footerY = 258;
     tft->drawRoundRect(8, footerY, SCREEN_WIDTH - 16, 28, 4, UI_CYAN);
     tft->fillRect(9, footerY + 1, SCREEN_WIDTH - 18, 26, UI_DARK_BLUE);
@@ -639,9 +639,9 @@ void drawDashboardStatic() {
     dashboardDrawn = true;
 }
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//  Dashboard Screen — Dynamic elements (updated each tick)
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â
+//  Dashboard Screen Ã¢â‚¬â€ Dynamic elements (updated each tick)
+// Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â
 void drawDashboardDynamic() {
     TFT_eSPI* tft = display.getTFT();
     
@@ -651,13 +651,13 @@ void drawDashboardDynamic() {
     int row1Y = 42;
     int row2Y = 148;
     
-    // ── Header: BLE connection status ──
+    // Ã¢â€â‚¬Ã¢â€â‚¬ Header: BLE connection status Ã¢â€â‚¬Ã¢â€â‚¬
     tft->setTextDatum(MR_DATUM);
     tft->setTextSize(1);
     tft->setTextColor(ble.isConnected() ? UI_GREEN : UI_RED, UI_DARK_GRAY);
     tft->drawString(ble.isConnected() ? "BLE: SYNCED  " : "BLE: WAITING ", SCREEN_WIDTH - 8, 16);
     
-    // ── Card 1: Scan Stats (dynamic values) ──
+    // Ã¢â€â‚¬Ã¢â€â‚¬ Card 1: Scan Stats (dynamic values) Ã¢â€â‚¬Ã¢â€â‚¬
     tft->fillRect(cardX1 + 7, row1Y + 25, cardW - 14, 68, UI_BG);
     tft->setTextDatum(TL_DATUM);
     tft->setTextSize(1);
@@ -694,7 +694,7 @@ void drawDashboardDynamic() {
         tft->fillRect(barX + 1, barY + 1, (int)((barW - 2) * healthyRatio), 6, UI_GREEN);
     }
     
-    // ── Card 2: Weather (dynamic values) ──
+    // Ã¢â€â‚¬Ã¢â€â‚¬ Card 2: Weather (dynamic values) Ã¢â€â‚¬Ã¢â€â‚¬
     tft->fillRect(cardX2 + 7, row1Y + 25, cardW - 14, 68, UI_BG);
     tft->setTextDatum(TL_DATUM);
     tft->setTextSize(1);
@@ -719,7 +719,7 @@ void drawDashboardDynamic() {
         tft->drawString("to fetch weather", cardX2 + 8, row1Y + 60);
     }
     
-    // ── Card 4: System Info (dynamic values) ──
+    // Ã¢â€â‚¬Ã¢â€â‚¬ Card 4: System Info (dynamic values) Ã¢â€â‚¬Ã¢â€â‚¬
     tft->fillRect(cardX2 + 7, row2Y + 25, cardW - 14, 68, UI_BG);
     tft->setTextDatum(TL_DATUM);
     tft->setTextSize(1);
@@ -751,9 +751,9 @@ void drawDashboardDynamic() {
     tft->drawString(fpsBuf, cardX2 + 8, row2Y + 76);
 }
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â
 //  Home Screen (AGRO MATE AI BY CHIRAG ST MARY'S SCHOOL)
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â
 void drawHomeScreen() {
     TFT_eSPI* tft = display.getTFT();
     tft->fillScreen(UI_BG);
@@ -792,9 +792,9 @@ void drawHomeScreen() {
     tft->drawString("ST MARY'S SCHOOL", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 45);
 }
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â
 //  Status Bar
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â
 void drawStatusBar() {
     TFT_eSPI* tft = display.getTFT();
     
@@ -828,25 +828,52 @@ void drawStatusBar() {
     tft->drawString("DASHBOARD [BOOT]", btnX + (btnW / 2), btnY + (btnH / 2) + 1);
 }
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//  Result Screen — Disease Detected (Rich Two-Column Layout)
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â
+//  Helper: word-wrap a String into up to maxLines lines at maxW chars each
+// Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â
+static void drawWrappedText(TFT_eSPI* tft, const String& text, int x, int& y,
+                            int maxCharsPerLine, int lineHeight, int maxLines) {
+    String remaining = text;
+    int linesDrawn = 0;
+    while (remaining.length() > 0 && linesDrawn < maxLines) {
+        int cut = remaining.length();
+        if (cut > maxCharsPerLine) {
+            // Find last space before limit
+            cut = maxCharsPerLine;
+            for (int i = maxCharsPerLine; i > 0; i--) {
+                if (remaining.charAt(i) == ' ') { cut = i; break; }
+            }
+        }
+        String line = remaining.substring(0, cut);
+        line.trim();
+        char buf[64];
+        line.substring(0, 63).toCharArray(buf, sizeof(buf));
+        tft->drawString(buf, x, y);
+        y += lineHeight;
+        remaining = remaining.substring(cut);
+        remaining.trim();
+        linesDrawn++;
+    }
+}
+
+// Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â
+//  Result Screen Ã¢â‚¬â€ Disease Detected  (Portrait 320x480)
+// Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â
 void drawDiseaseResultScreen() {
     TFT_eSPI* tft = display.getTFT();
     tft->fillScreen(UI_BG);
-    
-    // Parse pipe-delimited: D|PlantName|ScientificName|Confidence|DiseaseName|Severity|HealthScore|Symptoms|Treatments|AISummary
+
+    // Parse pipe-delimited:
+    // D|PlantName|ScientificName|Confidence|DiseaseName|Severity|HealthScore|Symptoms|Treatments|AISummary
     String data = latestAiResult;
     String fields[10];
-    int fieldIdx = 0;
-    int startPos = 0;
+    int fieldIdx = 0, startPos = 0;
     for (int i = 0; i <= (int)data.length() && fieldIdx < 10; i++) {
         if (i == (int)data.length() || data.charAt(i) == '|') {
             fields[fieldIdx++] = data.substring(startPos, i);
             startPos = i + 1;
         }
     }
-    
     String plantName = (fieldIdx > 1) ? fields[1] : "Unknown";
     String sciName   = (fieldIdx > 2) ? fields[2] : "N/A";
     String confStr   = (fieldIdx > 3) ? fields[3] : "0";
@@ -856,365 +883,337 @@ void drawDiseaseResultScreen() {
     String symptoms  = (fieldIdx > 7) ? fields[7] : "";
     String treatments= (fieldIdx > 8) ? fields[8] : "";
     String aiSummary = (fieldIdx > 9) ? fields[9] : "";
-    
-    // ── HEADER BAR ──
-    tft->fillRect(0, 0, SCREEN_WIDTH, 28, UI_DARK_RED);
-    tft->drawFastHLine(0, 28, SCREEN_WIDTH, UI_RED);
-    tft->setTextDatum(ML_DATUM);
+
+    const int LM = 8;   // left margin
+    const int SW = 320; // screen width (portrait)
+    const int SH = 480; // screen height
+    int y = 0;
+
+    // Ã¢â€â‚¬Ã¢â€â‚¬ HEADER BAR (red theme = disease) Ã¢â€â‚¬Ã¢â€â‚¬
+    tft->fillRect(0, 0, SW, 30, UI_DARK_RED);
+    tft->drawFastHLine(0, 30, SW, UI_RED);
+    tft->setTextDatum(MC_DATUM);
     tft->setTextSize(1);
-    tft->setTextColor(UI_GREEN, UI_DARK_RED);
-    tft->drawString("AGROMATE AI", 8, 14);
-    
-    // Scan ID (right side)
-    char scanIdBuf[32];
-    snprintf(scanIdBuf, sizeof(scanIdBuf), "Scan #AGM-%06lu", totalScanCount);
-    tft->setTextDatum(MR_DATUM);
-    tft->setTextColor(UI_LIGHT_GRAY, UI_DARK_RED);
-    tft->drawString(scanIdBuf, SCREEN_WIDTH - 8, 14);
-    
-    // ── LEFT COLUMN: PLANT INFO (x: 8..230) ──
-    int leftX = 8;
-    int rightX = 245;
-    int colY = 36;
-    
+    tft->setTextColor(UI_WHITE, UI_DARK_RED);
+    tft->drawString("AGROMATE  |  DISEASE DETECTED", SW / 2, 15);
+    y = 36;
+
+    // Ã¢â€â‚¬Ã¢â€â‚¬ PLANT NAME (large, truncate at 20 chars) Ã¢â€â‚¬Ã¢â€â‚¬
     tft->setTextDatum(TL_DATUM);
-    tft->setTextSize(1);
-    tft->setTextColor(UI_CYAN);
-    tft->drawString("PLANT INFORMATION", leftX, colY);
-    tft->drawFastHLine(leftX, colY + 12, 220, UI_DARK_GRAY);
-    colY += 18;
-    
-    // Plant name (large)
     tft->setTextSize(2);
     tft->setTextColor(UI_WHITE);
-    // Truncate plant name if too long
-    String dispPlantName = plantName;
-    if (dispPlantName.length() > 16) dispPlantName = dispPlantName.substring(0, 15) + ".";
-    tft->drawString(dispPlantName, leftX, colY);
-    colY += 22;
-    
-    // Scientific name (italic feel, smaller)
+    String pn = plantName;
+    if (pn.length() > 19) pn = pn.substring(0, 18) + ".";
+    tft->drawString(pn, LM, y);
+    y += 24;
+
+    // Ã¢â€â‚¬Ã¢â€â‚¬ Scientific name + confidence Ã¢â€â‚¬Ã¢â€â‚¬
     tft->setTextSize(1);
     tft->setTextColor(UI_LIGHT_GRAY);
-    tft->drawString(sciName, leftX, colY);
-    colY += 14;
-    
-    // Confidence
-    tft->setTextColor(UI_DARK_CYAN);
+    String sn = sciName;
+    if (sn.length() > 34) sn = sn.substring(0, 33) + ".";
+    tft->drawString(sn, LM, y);
+    y += 13;
+
     char confBuf[32];
-    snprintf(confBuf, sizeof(confBuf), "Confidence: %s%%", confStr.c_str());
-    tft->drawString(confBuf, leftX, colY);
-    colY += 18;
-    
-    // ── RIGHT COLUMN: DISEASE ANALYSIS (x: 245..470) ──
-    int rColY = 36;
-    tft->setTextColor(UI_RED);
-    tft->drawString("DISEASE ANALYSIS", rightX, rColY);
-    tft->drawFastHLine(rightX, rColY + 12, 220, UI_DARK_GRAY);
-    rColY += 18;
-    
-    // Disease name
+    snprintf(confBuf, sizeof(confBuf), "Match confidence: %s%%", confStr.c_str());
+    tft->setTextColor(UI_DARK_CYAN);
+    tft->drawString(confBuf, LM, y);
+    y += 16;
+
+    // Ã¢â€â‚¬Ã¢â€â‚¬ DIVIDER Ã¢â€â‚¬Ã¢â€â‚¬
+    tft->drawFastHLine(LM, y, SW - LM * 2, UI_DARK_GRAY);
+    y += 6;
+
+    // Ã¢â€â‚¬Ã¢â€â‚¬ DISEASE NAME (large amber) Ã¢â€â‚¬Ã¢â€â‚¬
+    tft->setTextSize(1);
+    tft->setTextColor(UI_CYAN);
+    tft->drawString("DIAGNOSIS", LM, y);
+    y += 13;
+
     tft->setTextSize(2);
     tft->setTextColor(UI_AMBER);
-    String dispDisease = disease;
-    if (dispDisease.length() > 16) dispDisease = dispDisease.substring(0, 15) + ".";
-    tft->drawString(dispDisease, rightX, rColY);
-    rColY += 22;
-    
-    // Severity badge
+    String dn = disease;
+    if (dn.length() > 19) dn = dn.substring(0, 18) + ".";
+    tft->drawString(dn, LM, y);
+    y += 22;
+
+    // Ã¢â€â‚¬Ã¢â€â‚¬ SEVERITY BADGE + STATUS BADGE (side by side) Ã¢â€â‚¬Ã¢â€â‚¬
     tft->setTextSize(1);
-    tft->setTextColor(UI_LIGHT_GRAY);
-    tft->drawString("Severity:", rightX, rColY);
-    
-    // Color-coded severity badge
+    // Severity
+    severity.toUpperCase();
     uint16_t sevColor = UI_YELLOW;
-    if (severity == "high" || severity == "severe") sevColor = UI_RED;
-    else if (severity == "low") sevColor = UI_GREEN;
-    
-    int badgeX = rightX + 60;
-    tft->fillRoundRect(badgeX, rColY - 2, 70, 12, 3, sevColor);
-    tft->setTextColor(UI_BG, sevColor);
+    if (severity == "HIGH" || severity == "SEVERE") sevColor = UI_RED;
+    else if (severity == "LOW" || severity == "MILD") sevColor = UI_GREEN;
+    else if (severity == "CRITICAL") sevColor = 0xF81F; // Magenta
+
+    int badgeH = 18;
+    int sev1W  = 100;
+    int sev2W  = 100;
+    tft->fillRoundRect(LM,           y, sev1W, badgeH, 4, sevColor);
+    tft->fillRoundRect(LM + sev1W + 6, y, sev2W, badgeH, 4, UI_RED);
+
     tft->setTextDatum(MC_DATUM);
-    String sevUpper = severity;
-    sevUpper.toUpperCase();
-    tft->drawString(sevUpper, badgeX + 35, rColY + 4);
-    tft->setTextDatum(TL_DATUM);
-    rColY += 16;
-    
-    // Status: DISEASED badge
-    tft->setTextColor(UI_LIGHT_GRAY);
-    tft->drawString("Status:", rightX, rColY);
-    tft->fillRoundRect(rightX + 60, rColY - 2, 70, 12, 3, UI_RED);
-    tft->setTextColor(UI_WHITE, UI_RED);
-    tft->setTextDatum(MC_DATUM);
-    tft->drawString("DISEASED", rightX + 95, rColY + 4);
-    tft->setTextDatum(TL_DATUM);
-    rColY += 18;
-    
-    // ── DIVIDER ──
-    int divY = 120;
-    tft->drawFastHLine(8, divY, SCREEN_WIDTH - 16, UI_DARK_GRAY);
-    
-    // ── HEALTH SCORE BAR ──
-    int barY = divY + 6;
-    tft->setTextSize(1);
-    tft->setTextColor(UI_CYAN);
-    tft->drawString("HEALTH SCORE", leftX, barY);
-    
-    int barX = leftX;
-    int barW = SCREEN_WIDTH - 90;
-    int barH = 14;
-    barY += 14;
-    
-    // Bar outline
-    tft->drawRect(barX, barY, barW, barH, UI_MID_GRAY);
-    
-    // Fill with gradient based on health score
-    int fillW = (barW - 4) * healthScore / 100;
-    uint16_t barColor = UI_RED;
-    if (healthScore > 60) barColor = UI_GREEN;
-    else if (healthScore > 35) barColor = UI_YELLOW;
-    else if (healthScore > 15) barColor = UI_ORANGE;
-    tft->fillRect(barX + 2, barY + 2, fillW, barH - 4, barColor);
-    
-    // Health score percentage
-    char hsBuf[8];
-    snprintf(hsBuf, sizeof(hsBuf), "%d%%", healthScore);
-    tft->setTextDatum(ML_DATUM);
+    tft->setTextColor(UI_BG);
+    tft->drawString(severity, LM + sev1W / 2, y + badgeH / 2);
     tft->setTextColor(UI_WHITE);
-    tft->drawString(hsBuf, barX + barW + 6, barY + barH / 2);
+    tft->drawString("DISEASED", LM + sev1W + 6 + sev2W / 2, y + badgeH / 2);
     tft->setTextDatum(TL_DATUM);
-    
-    // ── DETECTED SYMPTOMS ──
-    int symY = barY + barH + 10;
+    y += badgeH + 8;
+
+    // Ã¢â€â‚¬Ã¢â€â‚¬ HEALTH SCORE BAR Ã¢â€â‚¬Ã¢â€â‚¬
+    tft->drawFastHLine(LM, y, SW - LM * 2, UI_DARK_GRAY);
+    y += 6;
     tft->setTextColor(UI_CYAN);
-    tft->drawString("DETECTED SYMPTOMS", leftX, symY);
-    tft->drawFastHLine(leftX, symY + 12, 200, UI_DARK_GRAY);
-    symY += 16;
-    
-    // Parse semicolon-separated symptoms
+    tft->drawString("HEALTH SCORE", LM, y);
+    y += 13;
+
+    int barW = SW - LM * 2;
+    int barH = 14;
+    tft->drawRect(LM, y, barW, barH, UI_MID_GRAY);
+    int fillW = (barW - 4) * healthScore / 100;
+    uint16_t barColor = (healthScore > 60) ? UI_GREEN : (healthScore > 35) ? UI_YELLOW : UI_RED;
+    tft->fillRect(LM + 2, y + 2, fillW, barH - 4, barColor);
+
+    char hsBuf[12];
+    snprintf(hsBuf, sizeof(hsBuf), "%d%%", healthScore);
+    tft->setTextDatum(MR_DATUM);
+    tft->setTextColor(UI_WHITE);
+    tft->drawString(hsBuf, SW - LM, y + barH / 2);
+    tft->setTextDatum(TL_DATUM);
+    y += barH + 8;
+
+    // Ã¢â€â‚¬Ã¢â€â‚¬ SYMPTOMS (up to 3 lines) Ã¢â€â‚¬Ã¢â€â‚¬
+    tft->drawFastHLine(LM, y, SW - LM * 2, UI_DARK_GRAY);
+    y += 5;
+    tft->setTextColor(UI_CYAN);
+    tft->drawString("SYMPTOMS", LM, y);
+    y += 13;
+
     tft->setTextColor(UI_AMBER);
-    int sStart = 0;
-    int symCount = 0;
-    for (int i = 0; i <= (int)symptoms.length() && symCount < 4; i++) {
+    int sStart = 0, symCount = 0;
+    for (int i = 0; i <= (int)symptoms.length() && symCount < 3; i++) {
         if (i == (int)symptoms.length() || symptoms.charAt(i) == ';') {
             String sym = symptoms.substring(sStart, i);
             sym.trim();
             if (sym.length() > 0) {
-                char symBuf[48];
-                snprintf(symBuf, sizeof(symBuf), "> %s", sym.c_str());
-                tft->drawString(symBuf, leftX + 4, symY);
-                symY += 12;
+                if (sym.length() > 36) sym = sym.substring(0, 35) + ".";
+                char sbuf[48];
+                snprintf(sbuf, sizeof(sbuf), "* %s", sym.c_str());
+                tft->drawString(sbuf, LM + 4, y);
+                y += 12;
                 symCount++;
             }
             sStart = i + 1;
         }
     }
-    
-    // ── TREATMENTS (right column, below divider) ──
-    int trtY = divY + 6;
+
+    // Ã¢â€â‚¬Ã¢â€â‚¬ TREATMENT (up to 3 lines) Ã¢â€â‚¬Ã¢â€â‚¬
+    tft->drawFastHLine(LM, y, SW - LM * 2, UI_DARK_GRAY);
+    y += 5;
     tft->setTextColor(UI_GREEN);
-    tft->drawString("TREATMENT", rightX, trtY);
-    tft->drawFastHLine(rightX, trtY + 12, 200, UI_DARK_GRAY);
-    trtY += 16;
-    
+    tft->drawString("TREATMENT", LM, y);
+    y += 13;
+
     tft->setTextColor(UI_WHITE);
-    int tStart = 0;
-    int trtCount = 0;
+    int tStart = 0, trtCount = 0;
     for (int i = 0; i <= (int)treatments.length() && trtCount < 3; i++) {
         if (i == (int)treatments.length() || treatments.charAt(i) == ';') {
             String trt = treatments.substring(tStart, i);
             trt.trim();
             if (trt.length() > 0) {
-                // Truncate long treatment strings
-                if (trt.length() > 28) trt = trt.substring(0, 27) + ".";
-                char trtBuf[48];
-                snprintf(trtBuf, sizeof(trtBuf), "+ %s", trt.c_str());
-                tft->drawString(trtBuf, rightX + 4, trtY);
-                trtY += 12;
+                if (trt.length() > 36) trt = trt.substring(0, 35) + ".";
+                char tbuf[48];
+                snprintf(tbuf, sizeof(tbuf), "+ %s", trt.c_str());
+                tft->drawString(tbuf, LM + 4, y);
+                y += 12;
                 trtCount++;
             }
             tStart = i + 1;
         }
     }
-    
-    // ── AI SUMMARY FOOTER ──
-    int footY = SCREEN_HEIGHT - 55;
-    tft->drawFastHLine(8, footY, SCREEN_WIDTH - 16, UI_DARK_GRAY);
-    footY += 6;
+
+    // Ã¢â€â‚¬Ã¢â€â‚¬ AI SUMMARY (2-line wrap) Ã¢â€â‚¬Ã¢â€â‚¬
+    int footY = SH - 38;
+    tft->drawFastHLine(LM, footY, SW - LM * 2, UI_DARK_GRAY);
+    footY += 5;
     tft->setTextColor(UI_DARK_CYAN);
-    tft->drawString("AI SUMMARY", leftX, footY);
+    tft->drawString("AI SUMMARY", LM, footY);
     footY += 12;
     tft->setTextColor(UI_LIGHT_GRAY);
-    // Word wrap AI summary to 2 lines max
-    if (aiSummary.length() > 60) {
-        tft->drawString(aiSummary.substring(0, 60), leftX, footY);
-        footY += 10;
-        tft->drawString(aiSummary.substring(60), leftX, footY);
-    } else {
-        tft->drawString(aiSummary, leftX, footY);
-    }
-    
-    // ── BOTTOM NAV ──
-    int navY = SCREEN_HEIGHT - 16;
-    tft->drawFastHLine(0, navY - 4, SCREEN_WIDTH, UI_DARK_GRAY);
+    drawWrappedText(tft, aiSummary, LM, footY, 42, 11, 2);
+
+    // Ã¢â€â‚¬Ã¢â€â‚¬ BOTTOM NAV HINT Ã¢â€â‚¬Ã¢â€â‚¬
+    tft->drawFastHLine(0, SH - 14, SW, UI_DARK_GRAY);
     tft->setTextDatum(MC_DATUM);
-    tft->setTextSize(1);
     tft->setTextColor(UI_GREEN);
-    tft->drawString("[BOOT] Dismiss", SCREEN_WIDTH / 2, navY + 4);
+    tft->drawString("[BOOT] Dismiss", SW / 2, SH - 7);
     tft->setTextDatum(TL_DATUM);
 }
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//  Result Screen — Healthy Plant (Clean Centered Layout)
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â
+//  Result Screen Ã¢â‚¬â€ Healthy Plant  (Portrait 320x480)
+// Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â
 void drawHealthyResultScreen() {
     TFT_eSPI* tft = display.getTFT();
     tft->fillScreen(UI_BG);
-    
-    // Parse pipe-delimited: H|PlantName|ScientificName|Confidence|HealthScore|Tips
+
+    // Parse pipe-delimited: H|PlantName|ScientificName|Confidence|HealthScore|Tips|AISummary
     String data = latestAiResult;
-    String fields[6];
-    int fieldIdx = 0;
-    int startPos = 0;
-    for (int i = 0; i <= (int)data.length() && fieldIdx < 6; i++) {
+    String fields[7];
+    int fieldIdx = 0, startPos = 0;
+    for (int i = 0; i <= (int)data.length() && fieldIdx < 7; i++) {
         if (i == (int)data.length() || data.charAt(i) == '|') {
             fields[fieldIdx++] = data.substring(startPos, i);
             startPos = i + 1;
         }
     }
-    
     String plantName = (fieldIdx > 1) ? fields[1] : "Unknown";
     String sciName   = (fieldIdx > 2) ? fields[2] : "N/A";
     String confStr   = (fieldIdx > 3) ? fields[3] : "0";
     int healthScore  = (fieldIdx > 4) ? fields[4].toInt() : 95;
     String tips      = (fieldIdx > 5) ? fields[5] : "";
-    
-    int cx = SCREEN_WIDTH / 2;
-    
-    // ── HEADER BAR ──
-    tft->fillRect(0, 0, SCREEN_WIDTH, 28, UI_DARK_GREEN);
-    tft->drawFastHLine(0, 28, SCREEN_WIDTH, UI_GREEN);
+    String aiSummary = (fieldIdx > 6) ? fields[6] : "";
+
+    const int LM = 8;
+    const int SW = 320;
+    const int SH = 480;
+    const int cx = SW / 2;
+    int y = 0;
+
+    // Ã¢â€â‚¬Ã¢â€â‚¬ HEADER BAR (green theme = healthy) Ã¢â€â‚¬Ã¢â€â‚¬
+    tft->fillRect(0, 0, SW, 30, UI_DARK_GREEN);
+    tft->drawFastHLine(0, 30, SW, UI_GREEN);
     tft->setTextDatum(MC_DATUM);
     tft->setTextSize(1);
     tft->setTextColor(UI_WHITE, UI_DARK_GREEN);
-    tft->drawString("AGROMATE AI  -  Plant Health Scan Result", cx, 14);
-    
-    // ── PLANT INFO (centered) ──
-    int y = 42;
+    tft->drawString("AGROMATE  |  PLANT HEALTH SCAN", cx, 15);
+    y = 36;
+
+    // Ã¢â€â‚¬Ã¢â€â‚¬ PLANT NAME Ã¢â€â‚¬Ã¢â€â‚¬
     tft->setTextDatum(MC_DATUM);
     tft->setTextSize(2);
     tft->setTextColor(UI_WHITE);
-    tft->drawString(plantName, cx, y);
-    y += 22;
-    
+    String pn = plantName;
+    if (pn.length() > 19) pn = pn.substring(0, 18) + ".";
+    tft->drawString(pn, cx, y);
+    y += 24;
+
+    // Scientific name
     tft->setTextSize(1);
     tft->setTextColor(UI_LIGHT_GRAY);
-    tft->drawString(sciName, cx, y);
-    y += 14;
-    
+    String sn = sciName;
+    if (sn.length() > 36) sn = sn.substring(0, 35) + ".";
+    tft->drawString(sn, cx, y);
+    y += 13;
+
+    // Confidence
     char confBuf[32];
-    snprintf(confBuf, sizeof(confBuf), "Confidence: %s%%", confStr.c_str());
+    snprintf(confBuf, sizeof(confBuf), "Match confidence: %s%%", confStr.c_str());
     tft->setTextColor(UI_DARK_CYAN);
     tft->drawString(confBuf, cx, y);
-    y += 22;
-    
-    // ── DIVIDER ──
-    tft->drawFastHLine(60, y, SCREEN_WIDTH - 120, UI_DARK_GRAY);
-    y += 10;
-    
-    // ── HEALTHY STATUS BADGE ──
-    int badgeW = 180;
-    int badgeH = 36;
-    int badgeX = cx - badgeW / 2;
-    tft->fillRoundRect(badgeX, y, badgeW, badgeH, 8, UI_GREEN);
+    y += 18;
+
+    // Ã¢â€â‚¬Ã¢â€â‚¬ HEALTHY STATUS BADGE (full width) Ã¢â€â‚¬Ã¢â€â‚¬
+    int badgeW = SW - LM * 2;
+    int badgeH = 40;
+    tft->fillRoundRect(LM, y, badgeW, badgeH, 8, UI_GREEN);
     tft->setTextSize(2);
-    tft->setTextColor(UI_BG, UI_GREEN);
-    tft->drawString("HEALTHY", cx, y + badgeH / 2);
+    tft->setTextColor(0x0000, UI_GREEN);  // black on green
+    tft->drawString("HEALTHY  Ã¢Å“â€œ", cx, y + badgeH / 2);
     y += badgeH + 14;
-    
-    // ── HEALTH SCORE BAR ──
+
+    // Ã¢â€â‚¬Ã¢â€â‚¬ HEALTH SCORE BAR Ã¢â€â‚¬Ã¢â€â‚¬
+    tft->setTextDatum(TL_DATUM);
     tft->setTextSize(1);
     tft->setTextColor(UI_CYAN);
-    tft->drawString("HEALTH SCORE", cx, y);
-    y += 14;
-    
-    int barW = 300;
-    int barH = 16;
-    int barX = cx - barW / 2;
-    
-    tft->drawRect(barX, y, barW, barH, UI_MID_GRAY);
-    int fillW = (barW - 4) * healthScore / 100;
-    tft->fillRect(barX + 2, y + 2, fillW, barH - 4, UI_GREEN);
-    
-    char hsBuf[8];
+    tft->drawString("HEALTH SCORE", LM, y);
+
+    char hsBuf[12];
     snprintf(hsBuf, sizeof(hsBuf), "%d%%", healthScore);
-    tft->setTextColor(UI_WHITE);
-    tft->drawString(hsBuf, cx, y + barH + 10);
-    y += barH + 24;
-    
-    // ── DIVIDER ──
-    tft->drawFastHLine(60, y, SCREEN_WIDTH - 120, UI_DARK_GRAY);
-    y += 10;
-    
-    // ── RECOMMENDATIONS ──
+    tft->setTextDatum(TR_DATUM);
     tft->setTextColor(UI_GREEN);
-    tft->drawString("RECOMMENDATIONS", cx, y);
-    y += 14;
-    
+    tft->drawString(hsBuf, SW - LM, y);
+    tft->setTextDatum(TL_DATUM);
+    y += 13;
+
+    int barW = SW - LM * 2;
+    int barH = 16;
+    tft->drawRect(LM, y, barW, barH, UI_MID_GRAY);
+    int fillW = (barW - 4) * healthScore / 100;
+    tft->fillRect(LM + 2, y + 2, fillW, barH - 4, UI_GREEN);
+    y += barH + 14;
+
+    // Ã¢â€â‚¬Ã¢â€â‚¬ DIVIDER Ã¢â€â‚¬Ã¢â€â‚¬
+    tft->drawFastHLine(LM, y, SW - LM * 2, UI_DARK_GRAY);
+    y += 8;
+
+    // Ã¢â€â‚¬Ã¢â€â‚¬ CARE RECOMMENDATIONS Ã¢â€â‚¬Ã¢â€â‚¬
+    tft->setTextDatum(MC_DATUM);
+    tft->setTextColor(UI_GREEN);
+    tft->drawString("CARE RECOMMENDATIONS", cx, y);
+    y += 15;
+
     tft->setTextDatum(TL_DATUM);
     tft->setTextColor(UI_WHITE);
-    int tStart = 0;
-    int tipCount = 0;
-    int tipX = 80;
+    int tStart = 0, tipCount = 0;
     for (int i = 0; i <= (int)tips.length() && tipCount < 4; i++) {
         if (i == (int)tips.length() || tips.charAt(i) == ';') {
             String tip = tips.substring(tStart, i);
             tip.trim();
             if (tip.length() > 0) {
-                char tipBuf[48];
-                snprintf(tipBuf, sizeof(tipBuf), "+ %s", tip.c_str());
-                tft->drawString(tipBuf, tipX, y);
-                y += 12;
+                if (tip.length() > 38) tip = tip.substring(0, 37) + ".";
+                char tbuf[48];
+                snprintf(tbuf, sizeof(tbuf), "+ %s", tip.c_str());
+                tft->drawString(tbuf, LM + 4, y);
+                y += 13;
                 tipCount++;
             }
             tStart = i + 1;
         }
     }
-    
-    // ── BOTTOM NAV ──
-    int navY = SCREEN_HEIGHT - 16;
-    tft->drawFastHLine(0, navY - 4, SCREEN_WIDTH, UI_DARK_GRAY);
+
+    // Ã¢â€â‚¬Ã¢â€â‚¬ AI SUMMARY (word-wrapped, 2 lines) Ã¢â€â‚¬Ã¢â€â‚¬
+    int footY = SH - 38;
+    tft->drawFastHLine(LM, footY, SW - LM * 2, UI_DARK_GRAY);
+    footY += 5;
+    tft->setTextColor(UI_DARK_CYAN);
+    tft->drawString("AI SUMMARY", LM, footY);
+    footY += 12;
+    tft->setTextColor(UI_LIGHT_GRAY);
+    drawWrappedText(tft, aiSummary, LM, footY, 42, 11, 2);
+
+    // Ã¢â€â‚¬Ã¢â€â‚¬ BOTTOM NAV HINT Ã¢â€â‚¬Ã¢â€â‚¬
+    tft->drawFastHLine(0, SH - 14, SW, UI_DARK_GRAY);
     tft->setTextDatum(MC_DATUM);
-    tft->setTextSize(1);
     tft->setTextColor(UI_GREEN);
-    tft->drawString("[BOOT] Dismiss", cx, navY + 4);
+    tft->drawString("[BOOT] Dismiss", cx, SH - 7);
     tft->setTextDatum(TL_DATUM);
 }
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”
 //  Button Handler (Software Polling)
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”
 void handleButton() {
     static unsigned long lastDebounceTime = 0;
     static bool debouncedState = HIGH;
     static bool lastRawState = HIGH;
-    
+
     bool rawState = digitalRead(BTN_PIN);
     unsigned long now = millis();
-    
+
     if (rawState != lastRawState) {
         lastDebounceTime = now;
         lastRawState = rawState;
     }
-    
+
     if ((now - lastDebounceTime) > BTN_DEBOUNCE_MS) {
         if (rawState != debouncedState) {
             debouncedState = rawState;
             if (debouncedState == LOW) { // Press event (active-low BOOT button)
                 btnPressCount++;
                 Serial.printf("[BTN] Valid press #%d, switching screen from %d...\n", btnPressCount, (int)currentScreen);
-                
+
                 if (currentScreen == ScreenMode::FACE) {
                     currentScreen = ScreenMode::DASHBOARD;
                     dashboardDrawn = false;
@@ -1231,9 +1230,9 @@ void handleButton() {
     }
 }
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â
 //  Demo Mode updates (active only when BLE is not synced)
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â
 void updateDemo() {
     if (!demoMode) return;
     
@@ -1261,9 +1260,9 @@ void updateDemo() {
     }
 }
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â
 //  Setup
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â
 void setup() {
     // Set custom base MAC address to bypass Windows BLE caching
     uint8_t customMac[] = {0x28, 0x84, 0x85, 0x4D, 0x11, 0x50};
@@ -1300,7 +1299,7 @@ void setup() {
     delay(500);
     
     Serial.println("\n=============================================");
-    Serial.println("   AgroMate Robot — Production Build v3.0");
+    Serial.println("   AgroMate Robot Ã¢â‚¬â€ Production Build v3.0");
     Serial.println("=============================================");
     
     // Load persistent scan counter from NVS flash
@@ -1311,10 +1310,10 @@ void setup() {
     
     // TFT RD line is physically not connected, no need to drive GPIO 20.
  
-    // Configure BOOT button for Face ↔ Dashboard toggle
+    // Configure BOOT button for Face Ã¢â€ â€ Dashboard toggle
     pinMode(BTN_PIN, INPUT_PULLUP);
     
-    // ── Actual Sequential System Initialization ──
+    // Ã¢â€â‚¬Ã¢â€â‚¬ Actual Sequential System Initialization Ã¢â€â‚¬Ã¢â€â‚¬
     // 1. Probe and initialize camera first to avoid LCD_CAM conflict with parallel TFT
     int cameraErr = -1;
     for (int retry = 0; retry < 3; retry++) {
@@ -1391,9 +1390,9 @@ void setup() {
     Serial.printf("[BOOT] Free heap: %d bytes\n", ESP.getFreeHeap());
 }
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â
 //  Main Loop
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â
 void loop() {
     unsigned long now = millis();
     
@@ -1465,7 +1464,7 @@ void loop() {
         fpsTimer = now;
     }
     
-    // ── Screen rendering engine ──
+    // Ã¢â€â‚¬Ã¢â€â‚¬ Screen rendering engine Ã¢â€â‚¬Ã¢â€â‚¬
     if (currentScreen == ScreenMode::FACE) {
         face.update();
         face.render();
