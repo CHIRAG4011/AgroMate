@@ -311,7 +311,9 @@ function handleMicClick() {
         const input = document.getElementById('chatInput');
         if (input) {
           input.value = text;
-          sendChatMessage();
+          input.focus();
+          // Dispatch input event to refresh layout
+          input.dispatchEvent(new Event('input', { bubbles: true }));
         }
       }
     });

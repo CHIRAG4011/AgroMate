@@ -187,13 +187,51 @@ class TTSPlayer {
     this.currentText = text;
     this.mode = 'simple';
 
-    // Update label
     const label = document.getElementById('ttsPlayerLabel');
-    if (label) label.textCo    const engine = localStorage.getItem('agromate-voice-engine') || 'edge-tts';
+    if (label) label.textContent = 'Speaking...';
+    
+    // 1. Try Browser Native SpeechSynthesis FIRST (0ms latency, zero server wait)
+    if (window.speechSynthesis) {
+      try {
+        window.speechSynthesis.cancel();
+        const cleanText = text.replace(/[*#>`~_]/g, '').trim();
+        const utterance = new SpeechSynthesisUtterance(cleanText);
+        
+        const langMap = { hi: 'hi-IN', gu: 'gu-IN', mr: 'mr-IN', ta: 'ta-IN', te: 'te-IN', bn: 'bn-IN', pa: 'pa-IN', ur: 'ur-PK' };
+        utterance.lang = langMap[language] || 'en-IN';
+        utterance.rate = 1.0;
+
+        utterance.onstart = () => {
+          this.isPlaying = true;
+          const bar = document.getElementById('ttsPlayerBar');
+          if (bar) bar.classList.remove('hidden');
+        };
+
+        utterance.onend = () => {
+          this.stop();
+        };
+
+        utterance.onerror = (e) => {
+          console.warn('Browser SpeechSynthesis error, falling back to server TTS:', e);
+          this.fallbackServerTTS(text, language);
+        };
+
+        window.speechSynthesis.speak(utterance);
+        return;
+      } catch (err) {
+        console.warn('Native SpeechSynthesis failed:', err);
+      }
+    }
+
+    // 2. Fallback to server Edge-TTS
+    this.fallbackServerTTS(text, language);
+  }
+
+  async fallbackServerTTS(text, language) {
+    const engine = 'edge-tts';
     const gender = localStorage.getItem('agromate-voice-gender') || 'female';
 
     try {
-      // POST requests to TTS endpoint
       const response = await fetch(`${API_BASE}/voice/tts`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -270,6 +308,9 @@ class TTSPlayer {
   }
 
   stop() {
+    if (window.speechSynthesis) {
+      try { window.speechSynthesis.cancel(); } catch(e) {}
+    }
     this.audio.pause();
     this.audio.currentTime = 0;
     this.isPlaying = false;
