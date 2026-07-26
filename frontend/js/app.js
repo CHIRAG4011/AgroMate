@@ -376,18 +376,30 @@ class STTRecorder {
         };
 
         rec.onresult = (event) => {
+          let final = '';
           let interim = '';
-          for (let i = event.resultIndex; i < event.results.length; ++i) {
-            if (event.results[i].isFinal) {
-              finalTranscript += event.results[i][0].transcript;
+          for (let i = 0; i < event.results.length; ++i) {
+            const res = event.results[i];
+            if (res.isFinal) {
+              final += res[0].transcript;
             } else {
-              interim += event.results[i][0].transcript;
+              interim += res[0].transcript;
             }
           }
-          const text = finalTranscript || interim;
-          const inputEl = document.getElementById('chatInput');
-          if (inputEl && text) {
-            inputEl.value = text;
+          finalTranscript = final;
+          const text = final || interim;
+          
+          let targetInput = document.getElementById('chatInput');
+          if (!targetInput && this.buttonEl) {
+            targetInput = this.buttonEl.closest('.chat-input-area, form, div')?.querySelector('textarea, input');
+          }
+          if (!targetInput && (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA'))) {
+            targetInput = document.activeElement;
+          }
+
+          if (targetInput && text) {
+            targetInput.value = text;
+            targetInput.dispatchEvent(new Event('input', { bubbles: true }));
           }
         };
 
@@ -399,8 +411,12 @@ class STTRecorder {
         rec.onend = () => {
           this.isRecording = false;
           if (this.buttonEl) this.buttonEl.classList.remove('recording');
-          if (finalTranscript.trim() && this.onTranscriptionCallback) {
-            this.onTranscriptionCallback(finalTranscript.trim());
+          let targetInput = document.getElementById('chatInput');
+          let textToSubmit = (targetInput ? targetInput.value.trim() : '') || finalTranscript.trim();
+          if (textToSubmit && this.onTranscriptionCallback) {
+            const cb = this.onTranscriptionCallback;
+            this.onTranscriptionCallback = null;
+            cb(textToSubmit);
           }
           setTimeout(() => { if (typeof initGlobalVoiceCommander === 'function') initGlobalVoiceCommander(); }, 1000);
         };
@@ -426,7 +442,21 @@ class STTRecorder {
         const blob = new Blob(this.audioChunks, { type: 'audio/webm' });
         if (buttonEl) buttonEl.classList.remove('recording');
         const text = await this.uploadAndTranscribe(blob);
-        if (text && this.onTranscriptionCallback) this.onTranscriptionCallback(text);
+        if (text) {
+          let targetInput = document.getElementById('chatInput');
+          if (!targetInput && buttonEl) {
+            targetInput = buttonEl.closest('.chat-input-area, form, div')?.querySelector('textarea, input');
+          }
+          if (targetInput) {
+            targetInput.value = text;
+            targetInput.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+          if (this.onTranscriptionCallback) {
+            const cb = this.onTranscriptionCallback;
+            this.onTranscriptionCallback = null;
+            cb(text);
+          }
+        }
       };
       this.mediaRecorder.start();
       this.isRecording = true;
