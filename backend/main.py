@@ -1,4 +1,4 @@
-"""
+﻿"""
 AgroMate Backend — Main FastAPI Application
 
 Entry point for the laptop AI server. Initializes all services,
@@ -152,173 +152,102 @@ def _setup_ble_pipeline(server: BLEServer, logger):
         except Exception as e:
             logger.error(f"Failed to save scan image to disk: {e}")
 
-        # Auto-configure scan using the exact same two-step LLM Vision Pipeline as the manual dashboard uploads
+        # Single comprehensive Gemini scan — identify + diagnose + symptoms + treatment in one call
         analyser = VisionAnalyser()
-        auto_result = await analyser.analyze_image(jpeg_data, "identify")
-        
+        scan_result = await analyser.analyze_robot_scan(jpeg_data)
+
         scan_context = {}
-        common_name = "Unknown"
+        common_name = "Unknown Plant"
         scientific_name = "N/A"
         confidence = 0.0
         issue = "Unknown"
         is_healthy = True
-        
-        if auto_result:
-            common_name = auto_result.get("plant_name", "Unknown Plant")
-            scientific_name = auto_result.get("scientific_name", "N/A")
-            confidence = auto_result.get("confidence", 0.0) * 100
-            
-            # Step 2: Run Premium Disease Diagnosis using the same mode as the dashboard
-            diagnosis_res = await analyser.analyze_image(jpeg_data, "diagnose", plant_name=common_name)
-            if diagnosis_res:
-                is_healthy = diagnosis_res.get("is_healthy", True)
-                issue = diagnosis_res.get("disease_name", "Healthy")
-                scan_context = {
-                    "scan_type": "disease" if not is_healthy else "identification",
-                    "plant_name": common_name,
-                    "scientific_name": scientific_name,
-                    "is_healthy": is_healthy,
-                    "disease_name": issue,
-                    "severity": diagnosis_res.get("severity", "none"),
-                    "treatment": diagnosis_res.get("treatment", ""),
-                    "organic_treatment": diagnosis_res.get("organic_treatment", ""),
-                }
-            else:
-                is_healthy = True
+
+        if scan_result:
+            common_name     = scan_result.get("plant_name", "Unknown Plant")
+            scientific_name = scan_result.get("scientific_name", "N/A")
+            confidence      = float(scan_result.get("confidence", 0.0)) * 100
+            is_healthy      = bool(scan_result.get("is_healthy", True))
+            issue           = scan_result.get("disease_name", "Healthy")
+            if not issue or issue.lower() in ("none", ""):
                 issue = "Healthy"
-                scan_context = {
-                    "scan_type": "identification",
-                    "plant_name": common_name,
-                    "scientific_name": scientific_name,
-                    "is_healthy": True,
-                    "disease_name": "Healthy",
-                }
+                is_healthy = True
+
+            scan_context = {
+                "scan_type":        "disease" if not is_healthy else "identification",
+                "plant_name":       common_name,
+                "scientific_name":  scientific_name,
+                "is_healthy":       is_healthy,
+                "disease_name":     issue,
+                "severity":         scan_result.get("severity", "none"),
+                "treatment":        scan_result.get("chemical_treatment", ""),
+                "organic_treatment": scan_result.get("organic_treatment", ""),
+            }
         else:
-            logger.warning("Premium identification failed. Falling back to local plant and disease detection models...")
+            logger.warning("Robot scan: all AI APIs failed. Using local fallback.")
             try:
                 from .ai.plant_detector import PlantDetector
                 detector = PlantDetector()
                 await detector.initialize()
                 plant_res = await detector.identify(jpeg_data)
-                
                 if plant_res:
-                    common_name = plant_res.plant_name
+                    common_name     = plant_res.plant_name
                     scientific_name = plant_res.scientific_name
-                    confidence = plant_res.confidence * 100
-                    
-                    # Local disease diagnosis based on identified plant
-                    from .ai.disease_detector import DiseaseDetector
-                    disease_det = DiseaseDetector()
-                    await disease_det.initialize()
-                    disease_res = await disease_det.detect(jpeg_data, common_name)
-                    
-                    if disease_res:
-                        is_healthy = disease_res.is_healthy
-                        issue = disease_res.disease_name
-                        if is_healthy and not issue:
-                            issue = "Healthy"
-                        elif not is_healthy and not issue:
-                            issue = "Unknown Disease"
-                        
-                        scan_context = {
-                            "scan_type": "disease" if not is_healthy else "identification",
-                            "plant_name": common_name,
-                            "scientific_name": scientific_name,
-                            "is_healthy": is_healthy,
-                            "disease_name": issue,
-                            "severity": disease_res.severity or "none",
-                            "treatment": disease_res.treatment or "",
-                            "organic_treatment": disease_res.organic_treatment or "",
-                        }
-                    else:
-                        scan_context = {
-                            "scan_type": "identification",
-                            "plant_name": common_name,
-                            "scientific_name": scientific_name,
-                            "is_healthy": True,
-                            "disease_name": "Healthy",
-                        }
-                else:
-                    logger.warning("Local plant detector could not identify plant.")
+                    confidence      = plant_res.confidence * 100
+                    scan_context    = {
+                        "scan_type": "identification",
+                        "plant_name": common_name,
+                        "scientific_name": scientific_name,
+                        "is_healthy": True,
+                        "disease_name": "Healthy",
+                    }
             except Exception as e:
-                logger.error(f"Local fallback classification failed: {e}")
+                logger.error(f"Local fallback failed: {e}")
 
-        # Use ChatbotEngine to generate the localized two-tier summary response
-        chatbot = ChatbotEngine()
-        await chatbot.initialize()
-        
-        # Get language from robot settings or default to Hindi/English
-        lang = robot.config.get("language", "hi")
-        
-        # Query chatbot with prompt trigger
-        query_msg = "Scan results received. Generate a summary."
-        chat_response = await chatbot.chat(
-            message=query_msg,
-            session_id=robot.robot_id,
-            language=lang,
-            scan_context=scan_context,
-            response_type="summary"
+        # Build TFT pipe-delimited payload directly from Gemini response (no chatbot overhead)
+        tft_plant   = _clean_for_tft(common_name, 24)
+        tft_sci     = _clean_for_tft(scientific_name, 40)
+        tft_conf    = f"{min(confidence, 100.0):.1f}"
+        tft_summary = _clean_for_tft(
+            scan_result.get("ai_summary", "") if scan_result else "", 100
         )
 
-        response_text = chat_response.short_summary or chat_response.text
-        
-        # Format display text as structured pipe-delimited data for the robot's TFT display.
-        # All fields are sanitized: markdown stripped, pipes replaced, newlines → semicolons.
-        # Disease format: D|Plant|Scientific|Confidence%|Disease|Severity|HealthScore|Symptoms|Treatment|Summary
-        # Healthy format: H|Plant|Scientific|Confidence%|HealthScore|Tips
-        
-        # Clean all text fields for TFT
-        tft_plant     = _clean_for_tft(common_name, 24)
-        tft_sci       = _clean_for_tft(scientific_name, 28)
-        tft_conf      = f"{min(confidence, 100.0):.1f}"  # already ×100 from line 135
-        tft_summary   = _clean_for_tft(response_text, 80)
-        
-        if not is_healthy and issue != "Healthy":
-            severity      = scan_context.get("severity", "moderate")
-            treatment     = scan_context.get("treatment", "Monitor plant health")
-            organic       = scan_context.get("organic_treatment", "")
-            disease_name_raw = scan_context.get("disease_name", issue)
-            
+        if not is_healthy and issue.lower() not in ("healthy", "none", ""):
+            severity     = scan_context.get("severity", "moderate")
+            organic      = scan_context.get("organic_treatment", "")
+            chemical     = scan_context.get("treatment", "")
+            disease_raw  = scan_context.get("disease_name", issue)
+
+            # Get symptoms directly from Gemini (semicolon-separated)
+            symptoms_raw = scan_result.get("symptoms_list", "") if scan_result else ""
+            if not symptoms_raw:
+                symptoms_raw = "Visible damage;Discoloration;Abnormal growth"
+            symptoms = _clean_for_tft(symptoms_raw, 80)
+
             # Health score from severity
-            severity_scores = {"low": 65, "mild": 65, "moderate": 45, "high": 25, "severe": 10, "none": 85}
-            health_score = severity_scores.get(severity.lower(), 50)
-            
-            # Build symptoms dynamically from disease name (fallback to generic)
-            disease_lower = disease_name_raw.lower()
-            if "blight" in disease_lower:
-                symptoms = "Browning;Leaf spots;Wilting"
-            elif "rust" in disease_lower:
-                symptoms = "Orange pustules;Leaf spots;Yellowing"
-            elif "mold" in disease_lower or "mildew" in disease_lower:
-                symptoms = "White powder;Fuzzy growth;Discoloration"
-            elif "wilt" in disease_lower:
-                symptoms = "Wilting;Yellowing;Stem rot"
-            elif "spot" in disease_lower:
-                symptoms = "Leaf spots;Yellowing;Necrosis"
-            elif "rot" in disease_lower:
-                symptoms = "Soft rot;Discoloration;Odor"
-            elif "deficien" in disease_lower or "chloros" in disease_lower:
-                symptoms = "Yellowing;Pale leaves;Stunted growth"
-            else:
-                symptoms = "Discoloration;Leaf damage;Abnormal growth"
-            
-            # Sanitize treatment fields — combine organic + chemical, keep short
-            tft_disease   = _clean_for_tft(disease_name_raw, 28)
+            sev_scores = {"none": 90, "mild": 65, "moderate": 45, "high": 25, "severe": 10}
+            health_score = sev_scores.get(severity.lower(), 50)
+            if scan_result and scan_result.get("health_score"):
+                health_score = int(scan_result["health_score"])
+
+            # Treatment: organic first (semicolons), then chemical fallback
+            treatment_combined = organic if organic else chemical
+            tft_treatment = _clean_for_tft(treatment_combined, 80)
+            tft_disease   = _clean_for_tft(disease_raw, 28)
             tft_severity  = _clean_for_tft(severity, 12)
-            tft_treatment = _clean_for_tft(
-                (organic + "; " + treatment) if organic else treatment, 70
-            )
-            
+
             display_text = f"D|{tft_plant}|{tft_sci}|{tft_conf}|{tft_disease}|{tft_severity}|{health_score}|{symptoms}|{tft_treatment}|{tft_summary}"
         else:
             health_score = 95
-            tips_src = scan_context.get("organic_treatment", "") or scan_context.get("treatment", "")
-            if tips_src:
-                tft_tips = _clean_for_tft(tips_src, 60)
+            if scan_result:
+                organic_tips = scan_result.get("organic_treatment", "")
+                chem_tips    = scan_result.get("chemical_treatment", "")
+                tips_raw     = organic_tips or chem_tips
             else:
-                tft_tips = "Water regularly;Ensure sunlight;Check soil pH"
+                tips_raw = scan_context.get("organic_treatment", "") or scan_context.get("treatment", "")
+            tft_tips = _clean_for_tft(tips_raw, 80) if tips_raw else "Water regularly;Ensure sunlight;Check soil pH;Apply compost"
             display_text = f"H|{tft_plant}|{tft_sci}|{tft_conf}|{health_score}|{tft_tips}"
-        
+
         expression = FaceExpression.HAPPY if is_healthy else FaceExpression.WARNING
 
         # Send structured data to the robot display

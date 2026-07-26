@@ -1,4 +1,4 @@
-﻿/**
+/**
  * AgroMate ESP32-S3 Firmware Ã¢â‚¬â€ Production Build
  * 
  * Features:
@@ -829,371 +829,313 @@ void drawStatusBar() {
 }
 
 // Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â
-//  Helper: word-wrap a String into up to maxLines lines at maxW chars each
-// Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â
-static void drawWrappedText(TFT_eSPI* tft, const String& text, int x, int& y,
-                            int maxCharsPerLine, int lineHeight, int maxLines) {
-    String remaining = text;
-    int linesDrawn = 0;
-    while (remaining.length() > 0 && linesDrawn < maxLines) {
-        int cut = remaining.length();
-        if (cut > maxCharsPerLine) {
-            // Find last space before limit
-            cut = maxCharsPerLine;
-            for (int i = maxCharsPerLine; i > 0; i--) {
-                if (remaining.charAt(i) == ' ') { cut = i; break; }
+// =============================================================
+//  Helper: draw text list items (semicolon-separated) on TFT
+// =============================================================
+static void drawListItems(TFT_eSPI* tft, const String& src,
+                          int x, int& y, int maxItems,
+                          int maxChars, int lineH, const char* prefix) {
+    int start = 0, count = 0;
+    for (int i = 0; i <= (int)src.length() && count < maxItems; i++) {
+        if (i == (int)src.length() || src.charAt(i) == ';') {
+            String item = src.substring(start, i);
+            item.trim();
+            if (item.length() > 0) {
+                if ((int)item.length() > maxChars) item = item.substring(0, maxChars - 1) + ".";
+                char buf[64];
+                snprintf(buf, sizeof(buf), "%s %s", prefix, item.c_str());
+                tft->drawString(buf, x, y);
+                y += lineH;
+                count++;
             }
+            start = i + 1;
         }
-        String line = remaining.substring(0, cut);
-        line.trim();
-        char buf[64];
-        line.substring(0, 63).toCharArray(buf, sizeof(buf));
-        tft->drawString(buf, x, y);
-        y += lineHeight;
-        remaining = remaining.substring(cut);
-        remaining.trim();
-        linesDrawn++;
     }
 }
 
-// Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â
-//  Result Screen Ã¢â‚¬â€ Disease Detected  (Portrait 320x480)
-// Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â
+// =============================================================
+//  Helper: word-wrap up to maxLines onto TFT
+// =============================================================
+static void drawWrappedText(TFT_eSPI* tft, const String& text, int x, int& y,
+                            int maxChars, int lineH, int maxLines) {
+    String rem = text;
+    int drawn = 0;
+    while (rem.length() > 0 && drawn < maxLines) {
+        int cut = (int)rem.length();
+        if (cut > maxChars) {
+            cut = maxChars;
+            for (int i = maxChars - 1; i > 0; i--) {
+                if (rem.charAt(i) == ' ') { cut = i; break; }
+            }
+        }
+        String line = rem.substring(0, cut);
+        line.trim();
+        char buf[64];
+        line.substring(0, 62).toCharArray(buf, sizeof(buf));
+        tft->drawString(buf, x, y);
+        y += lineH;
+        rem = rem.substring(cut);
+        rem.trim();
+        drawn++;
+    }
+}
+
+// =============================================================
+// =============================================================
+//  DISEASE RESULT SCREEN  320 x 480  portrait
+//  Flows top-to-bottom filling the full 480px height
+// =============================================================
 void drawDiseaseResultScreen() {
     TFT_eSPI* tft = display.getTFT();
     tft->fillScreen(UI_BG);
 
-    // Parse pipe-delimited:
-    // D|PlantName|ScientificName|Confidence|DiseaseName|Severity|HealthScore|Symptoms|Treatments|AISummary
-    String data = latestAiResult;
+    // Parse: D|Plant|Sci|Conf|Disease|Severity|HealthScore|Symptoms|Treatments|Summary
     String fields[10];
-    int fieldIdx = 0, startPos = 0;
-    for (int i = 0; i <= (int)data.length() && fieldIdx < 10; i++) {
-        if (i == (int)data.length() || data.charAt(i) == '|') {
-            fields[fieldIdx++] = data.substring(startPos, i);
-            startPos = i + 1;
+    int fi = 0, sp = 0;
+    for (int i = 0; i <= (int)latestAiResult.length() && fi < 10; i++) {
+        if (i == (int)latestAiResult.length() || latestAiResult.charAt(i) == '|') {
+            fields[fi++] = latestAiResult.substring(sp, i);
+            sp = i + 1;
         }
     }
-    String plantName = (fieldIdx > 1) ? fields[1] : "Unknown";
-    String sciName   = (fieldIdx > 2) ? fields[2] : "N/A";
-    String confStr   = (fieldIdx > 3) ? fields[3] : "0";
-    String disease   = (fieldIdx > 4) ? fields[4] : "Unknown";
-    String severity  = (fieldIdx > 5) ? fields[5] : "moderate";
-    int healthScore  = (fieldIdx > 6) ? fields[6].toInt() : 50;
-    String symptoms  = (fieldIdx > 7) ? fields[7] : "";
-    String treatments= (fieldIdx > 8) ? fields[8] : "";
-    String aiSummary = (fieldIdx > 9) ? fields[9] : "";
+    String plantName = (fi > 1) ? fields[1] : "Unknown";
+    String sciName   = (fi > 2) ? fields[2] : "";
+    String confStr   = (fi > 3) ? fields[3] : "0";
+    String disease   = (fi > 4) ? fields[4] : "Unknown";
+    String severity  = (fi > 5) ? fields[5] : "MODERATE";
+    int    hscore    = (fi > 6) ? fields[6].toInt() : 50;
+    String symptoms  = (fi > 7) ? fields[7] : "Visible damage;Discoloration";
+    String treatment = (fi > 8) ? fields[8] : "Consult an agronomist";
+    String summary   = (fi > 9) ? fields[9] : "";
 
-    const int LM = 8;   // left margin
-    const int SW = 320; // screen width (portrait)
-    const int SH = 480; // screen height
+    severity.toUpperCase();
+    if (plantName.length() > 24) plantName = plantName.substring(0, 23) + ".";
+    if (sciName.length()   > 42) sciName   = sciName.substring(0, 41)   + ".";
+    if (disease.length()   > 24) disease   = disease.substring(0, 23)   + ".";
+
+    const int X  = 6;
+    const int W  = 308;
+    const int CX = 160;
     int y = 0;
 
-    // Ã¢â€â‚¬Ã¢â€â‚¬ HEADER BAR (red theme = disease) Ã¢â€â‚¬Ã¢â€â‚¬
-    tft->fillRect(0, 0, SW, 30, UI_DARK_RED);
-    tft->drawFastHLine(0, 30, SW, UI_RED);
+    // ── HEADER BAR (34px) ──────────────────────────────────────
+    tft->fillRect(0, 0, 320, 34, UI_DARK_RED);
+    tft->drawFastHLine(0, 34, 320, UI_RED);
     tft->setTextDatum(MC_DATUM);
     tft->setTextSize(1);
     tft->setTextColor(UI_WHITE, UI_DARK_RED);
-    tft->drawString("AGROMATE  |  DISEASE DETECTED", SW / 2, 15);
-    y = 36;
+    tft->drawString("-- AGROMATE -- DISEASE DETECTED --", CX, 17);
+    y = 38;
 
-    // Ã¢â€â‚¬Ã¢â€â‚¬ PLANT NAME (large, truncate at 20 chars) Ã¢â€â‚¬Ã¢â€â‚¬
+    // ── PLANT NAME (size:2, bold white, 20px) ──────────────────
     tft->setTextDatum(TL_DATUM);
     tft->setTextSize(2);
     tft->setTextColor(UI_WHITE);
-    String pn = plantName;
-    if (pn.length() > 19) pn = pn.substring(0, 18) + ".";
-    tft->drawString(pn, LM, y);
-    y += 24;
+    tft->drawString(plantName, X, y);
+    y += 20;
 
-    // Ã¢â€â‚¬Ã¢â€â‚¬ Scientific name + confidence Ã¢â€â‚¬Ã¢â€â‚¬
+    // ── Sci name (size:1, gray, 11px) ──────────────────────────
     tft->setTextSize(1);
     tft->setTextColor(UI_LIGHT_GRAY);
-    String sn = sciName;
-    if (sn.length() > 34) sn = sn.substring(0, 33) + ".";
-    tft->drawString(sn, LM, y);
-    y += 13;
+    if (sciName.length() > 0) tft->drawString(sciName, X, y);
+    y += 11;
 
-    char confBuf[32];
-    snprintf(confBuf, sizeof(confBuf), "Match confidence: %s%%", confStr.c_str());
+    // ── Confidence (size:1, cyan, 12px) ────────────────────────
+    char cbuf[30]; snprintf(cbuf, sizeof(cbuf), "Match: %s%%  Severity: %s", confStr.c_str(), severity.c_str());
     tft->setTextColor(UI_DARK_CYAN);
-    tft->drawString(confBuf, LM, y);
-    y += 16;
+    tft->drawString(cbuf, X, y);
+    y += 12;
 
-    // Ã¢â€â‚¬Ã¢â€â‚¬ DIVIDER Ã¢â€â‚¬Ã¢â€â‚¬
-    tft->drawFastHLine(LM, y, SW - LM * 2, UI_DARK_GRAY);
-    y += 6;
+    // ── DIVIDER ─────────────────────────────────────────────────
+    tft->drawFastHLine(0, y, 320, UI_MID_GRAY);
+    y += 4;
 
-    // Ã¢â€â‚¬Ã¢â€â‚¬ DISEASE NAME (large amber) Ã¢â€â‚¬Ã¢â€â‚¬
+    // ── DISEASE NAME (size:2, amber, 20px) ─────────────────────
     tft->setTextSize(1);
     tft->setTextColor(UI_CYAN);
-    tft->drawString("DIAGNOSIS", LM, y);
-    y += 13;
-
+    tft->drawString("DIAGNOSIS:", X, y);
+    y += 11;
     tft->setTextSize(2);
     tft->setTextColor(UI_AMBER);
-    String dn = disease;
-    if (dn.length() > 19) dn = dn.substring(0, 18) + ".";
-    tft->drawString(dn, LM, y);
+    tft->drawString(disease, X, y);
+    y += 21;
+    tft->setTextSize(1);
+
+    // ── SEVERITY BADGE + HEALTH SCORE on same row ──────────────
+    uint16_t sevC = UI_YELLOW;
+    if      (severity == "SEVERE" || severity == "HIGH")  sevC = UI_RED;
+    else if (severity == "MILD"   || severity == "LOW")   sevC = UI_GREEN;
+    else if (severity == "CRITICAL")                       sevC = 0xF81F;
+
+    tft->fillRoundRect(X, y, 90, 16, 3, sevC);
+    tft->setTextDatum(MC_DATUM);
+    tft->setTextColor(0x0000);
+    tft->drawString(severity, X + 45, y + 8);
+
+    tft->fillRoundRect(X + 98, y, 76, 16, 3, UI_RED);
+    tft->setTextColor(UI_WHITE);
+    tft->drawString("DISEASED", X + 136, y + 8);
+
+    // Score % on right side of same row
+    char hs[8]; snprintf(hs, sizeof(hs), "%d%%", hscore);
+    tft->setTextDatum(MR_DATUM);
+    uint16_t bC = (hscore > 60) ? UI_GREEN : (hscore > 30) ? UI_YELLOW : UI_RED;
+    tft->setTextColor(bC);
+    tft->drawString(hs, 314, y + 8);
+    tft->setTextDatum(TL_DATUM);
     y += 22;
 
-    // Ã¢â€â‚¬Ã¢â€â‚¬ SEVERITY BADGE + STATUS BADGE (side by side) Ã¢â€â‚¬Ã¢â€â‚¬
-    tft->setTextSize(1);
-    // Severity
-    severity.toUpperCase();
-    uint16_t sevColor = UI_YELLOW;
-    if (severity == "HIGH" || severity == "SEVERE") sevColor = UI_RED;
-    else if (severity == "LOW" || severity == "MILD") sevColor = UI_GREEN;
-    else if (severity == "CRITICAL") sevColor = 0xF81F; // Magenta
+    // ── HEALTH BAR (12px) ───────────────────────────────────────
+    tft->drawRect(X, y, W, 12, UI_MID_GRAY);
+    tft->fillRect(X + 2, y + 2, (W - 4) * hscore / 100, 8, bC);
+    y += 16;
 
-    int badgeH = 18;
-    int sev1W  = 100;
-    int sev2W  = 100;
-    tft->fillRoundRect(LM,           y, sev1W, badgeH, 4, sevColor);
-    tft->fillRoundRect(LM + sev1W + 6, y, sev2W, badgeH, 4, UI_RED);
-
-    tft->setTextDatum(MC_DATUM);
-    tft->setTextColor(UI_BG);
-    tft->drawString(severity, LM + sev1W / 2, y + badgeH / 2);
-    tft->setTextColor(UI_WHITE);
-    tft->drawString("DISEASED", LM + sev1W + 6 + sev2W / 2, y + badgeH / 2);
-    tft->setTextDatum(TL_DATUM);
-    y += badgeH + 8;
-
-    // Ã¢â€â‚¬Ã¢â€â‚¬ HEALTH SCORE BAR Ã¢â€â‚¬Ã¢â€â‚¬
-    tft->drawFastHLine(LM, y, SW - LM * 2, UI_DARK_GRAY);
-    y += 6;
+    // ── SYMPTOMS ────────────────────────────────────────────────
+    tft->drawFastHLine(0, y, 320, UI_MID_GRAY);
+    y += 3;
     tft->setTextColor(UI_CYAN);
-    tft->drawString("HEALTH SCORE", LM, y);
-    y += 13;
-
-    int barW = SW - LM * 2;
-    int barH = 14;
-    tft->drawRect(LM, y, barW, barH, UI_MID_GRAY);
-    int fillW = (barW - 4) * healthScore / 100;
-    uint16_t barColor = (healthScore > 60) ? UI_GREEN : (healthScore > 35) ? UI_YELLOW : UI_RED;
-    tft->fillRect(LM + 2, y + 2, fillW, barH - 4, barColor);
-
-    char hsBuf[12];
-    snprintf(hsBuf, sizeof(hsBuf), "%d%%", healthScore);
-    tft->setTextDatum(MR_DATUM);
-    tft->setTextColor(UI_WHITE);
-    tft->drawString(hsBuf, SW - LM, y + barH / 2);
-    tft->setTextDatum(TL_DATUM);
-    y += barH + 8;
-
-    // Ã¢â€â‚¬Ã¢â€â‚¬ SYMPTOMS (up to 3 lines) Ã¢â€â‚¬Ã¢â€â‚¬
-    tft->drawFastHLine(LM, y, SW - LM * 2, UI_DARK_GRAY);
-    y += 5;
-    tft->setTextColor(UI_CYAN);
-    tft->drawString("SYMPTOMS", LM, y);
-    y += 13;
-
+    tft->drawString("SYMPTOMS:", X, y);
+    y += 11;
     tft->setTextColor(UI_AMBER);
-    int sStart = 0, symCount = 0;
-    for (int i = 0; i <= (int)symptoms.length() && symCount < 3; i++) {
-        if (i == (int)symptoms.length() || symptoms.charAt(i) == ';') {
-            String sym = symptoms.substring(sStart, i);
-            sym.trim();
-            if (sym.length() > 0) {
-                if (sym.length() > 36) sym = sym.substring(0, 35) + ".";
-                char sbuf[48];
-                snprintf(sbuf, sizeof(sbuf), "* %s", sym.c_str());
-                tft->drawString(sbuf, LM + 4, y);
-                y += 12;
-                symCount++;
-            }
-            sStart = i + 1;
-        }
-    }
+    drawListItems(tft, symptoms, X + 4, y, 4, 46, 11, "*");
 
-    // Ã¢â€â‚¬Ã¢â€â‚¬ TREATMENT (up to 3 lines) Ã¢â€â‚¬Ã¢â€â‚¬
-    tft->drawFastHLine(LM, y, SW - LM * 2, UI_DARK_GRAY);
-    y += 5;
+    // ── TREATMENT ───────────────────────────────────────────────
+    tft->drawFastHLine(0, y, 320, UI_MID_GRAY);
+    y += 3;
     tft->setTextColor(UI_GREEN);
-    tft->drawString("TREATMENT", LM, y);
-    y += 13;
-
+    tft->drawString("TREATMENT:", X, y);
+    y += 11;
     tft->setTextColor(UI_WHITE);
-    int tStart = 0, trtCount = 0;
-    for (int i = 0; i <= (int)treatments.length() && trtCount < 3; i++) {
-        if (i == (int)treatments.length() || treatments.charAt(i) == ';') {
-            String trt = treatments.substring(tStart, i);
-            trt.trim();
-            if (trt.length() > 0) {
-                if (trt.length() > 36) trt = trt.substring(0, 35) + ".";
-                char tbuf[48];
-                snprintf(tbuf, sizeof(tbuf), "+ %s", trt.c_str());
-                tft->drawString(tbuf, LM + 4, y);
-                y += 12;
-                trtCount++;
-            }
-            tStart = i + 1;
-        }
+    drawListItems(tft, treatment, X + 4, y, 4, 46, 11, "+");
+
+    // ── AI SUMMARY ──────────────────────────────────────────────
+    if (summary.length() > 0) {
+        tft->drawFastHLine(0, y, 320, UI_MID_GRAY);
+        y += 3;
+        tft->setTextColor(UI_DARK_CYAN);
+        tft->drawString("AI SUMMARY:", X, y);
+        y += 11;
+        tft->setTextColor(UI_LIGHT_GRAY);
+        drawWrappedText(tft, summary, X, y, 50, 11, 3);
     }
 
-    // Ã¢â€â‚¬Ã¢â€â‚¬ AI SUMMARY (2-line wrap) Ã¢â€â‚¬Ã¢â€â‚¬
-    int footY = SH - 38;
-    tft->drawFastHLine(LM, footY, SW - LM * 2, UI_DARK_GRAY);
-    footY += 5;
-    tft->setTextColor(UI_DARK_CYAN);
-    tft->drawString("AI SUMMARY", LM, footY);
-    footY += 12;
-    tft->setTextColor(UI_LIGHT_GRAY);
-    drawWrappedText(tft, aiSummary, LM, footY, 42, 11, 2);
-
-    // Ã¢â€â‚¬Ã¢â€â‚¬ BOTTOM NAV HINT Ã¢â€â‚¬Ã¢â€â‚¬
-    tft->drawFastHLine(0, SH - 14, SW, UI_DARK_GRAY);
+    // ── BOTTOM DISMISS HINT (last 14px) ─────────────────────────
+    tft->fillRect(0, 466, 320, 14, 0x1082);  // very dark bg strip
+    tft->drawFastHLine(0, 466, 320, UI_MID_GRAY);
     tft->setTextDatum(MC_DATUM);
     tft->setTextColor(UI_GREEN);
-    tft->drawString("[BOOT] Dismiss", SW / 2, SH - 7);
+    tft->drawString("[BOOT] Press to dismiss", CX, 473);
     tft->setTextDatum(TL_DATUM);
 }
 
-// Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â
-//  Result Screen Ã¢â‚¬â€ Healthy Plant  (Portrait 320x480)
-// Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â
+// =============================================================
+//  HEALTHY RESULT SCREEN   320 x 480  portrait
+// =============================================================
 void drawHealthyResultScreen() {
     TFT_eSPI* tft = display.getTFT();
     tft->fillScreen(UI_BG);
 
-    // Parse pipe-delimited: H|PlantName|ScientificName|Confidence|HealthScore|Tips|AISummary
-    String data = latestAiResult;
-    String fields[7];
-    int fieldIdx = 0, startPos = 0;
-    for (int i = 0; i <= (int)data.length() && fieldIdx < 7; i++) {
-        if (i == (int)data.length() || data.charAt(i) == '|') {
-            fields[fieldIdx++] = data.substring(startPos, i);
-            startPos = i + 1;
+    // Parse: H|Plant|Sci|Conf|HealthScore|Tips
+    String fields[6];
+    int fi = 0, sp = 0;
+    for (int i = 0; i <= (int)latestAiResult.length() && fi < 6; i++) {
+        if (i == (int)latestAiResult.length() || latestAiResult.charAt(i) == '|') {
+            fields[fi++] = latestAiResult.substring(sp, i);
+            sp = i + 1;
         }
     }
-    String plantName = (fieldIdx > 1) ? fields[1] : "Unknown";
-    String sciName   = (fieldIdx > 2) ? fields[2] : "N/A";
-    String confStr   = (fieldIdx > 3) ? fields[3] : "0";
-    int healthScore  = (fieldIdx > 4) ? fields[4].toInt() : 95;
-    String tips      = (fieldIdx > 5) ? fields[5] : "";
-    String aiSummary = (fieldIdx > 6) ? fields[6] : "";
+    String plantName = (fi > 1) ? fields[1] : "Unknown";
+    String sciName   = (fi > 2) ? fields[2] : "";
+    String confStr   = (fi > 3) ? fields[3] : "0";
+    int    hscore    = (fi > 4) ? fields[4].toInt() : 95;
+    String tips      = (fi > 5) ? fields[5] : "Water regularly;Check sunlight;Ensure drainage;Apply compost";
 
-    const int LM = 8;
-    const int SW = 320;
-    const int SH = 480;
-    const int cx = SW / 2;
+    if (plantName.length() > 24) plantName = plantName.substring(0, 23) + ".";
+    if (sciName.length()   > 42) sciName   = sciName.substring(0, 41)   + ".";
+
+    const int X  = 6;
+    const int W  = 308;
+    const int CX = 160;
     int y = 0;
 
-    // Ã¢â€â‚¬Ã¢â€â‚¬ HEADER BAR (green theme = healthy) Ã¢â€â‚¬Ã¢â€â‚¬
-    tft->fillRect(0, 0, SW, 30, UI_DARK_GREEN);
-    tft->drawFastHLine(0, 30, SW, UI_GREEN);
+    // ── HEADER BAR (34px, green) ────────────────────────────────
+    tft->fillRect(0, 0, 320, 34, UI_DARK_GREEN);
+    tft->drawFastHLine(0, 34, 320, UI_GREEN);
     tft->setTextDatum(MC_DATUM);
     tft->setTextSize(1);
     tft->setTextColor(UI_WHITE, UI_DARK_GREEN);
-    tft->drawString("AGROMATE  |  PLANT HEALTH SCAN", cx, 15);
-    y = 36;
+    tft->drawString("-- AGROMATE -- PLANT SCAN RESULT --", CX, 17);
+    y = 38;
 
-    // Ã¢â€â‚¬Ã¢â€â‚¬ PLANT NAME Ã¢â€â‚¬Ã¢â€â‚¬
-    tft->setTextDatum(MC_DATUM);
+    // ── PLANT NAME (size:2, centred, 22px) ─────────────────────
     tft->setTextSize(2);
     tft->setTextColor(UI_WHITE);
-    String pn = plantName;
-    if (pn.length() > 19) pn = pn.substring(0, 18) + ".";
-    tft->drawString(pn, cx, y);
-    y += 24;
+    tft->drawString(plantName, CX, y);
+    y += 22;
 
-    // Scientific name
+    // ── Sci name + Confidence (size:1, centred) ─────────────────
     tft->setTextSize(1);
     tft->setTextColor(UI_LIGHT_GRAY);
-    String sn = sciName;
-    if (sn.length() > 36) sn = sn.substring(0, 35) + ".";
-    tft->drawString(sn, cx, y);
-    y += 13;
-
-    // Confidence
-    char confBuf[32];
-    snprintf(confBuf, sizeof(confBuf), "Match confidence: %s%%", confStr.c_str());
+    if (sciName.length() > 0) tft->drawString(sciName, CX, y);
+    y += 11;
+    char cbuf[30]; snprintf(cbuf, sizeof(cbuf), "Confidence: %s%%", confStr.c_str());
     tft->setTextColor(UI_DARK_CYAN);
-    tft->drawString(confBuf, cx, y);
-    y += 18;
+    tft->drawString(cbuf, CX, y);
+    y += 14;
 
-    // Ã¢â€â‚¬Ã¢â€â‚¬ HEALTHY STATUS BADGE (full width) Ã¢â€â‚¬Ã¢â€â‚¬
-    int badgeW = SW - LM * 2;
-    int badgeH = 40;
-    tft->fillRoundRect(LM, y, badgeW, badgeH, 8, UI_GREEN);
+    // ── HEALTHY STATUS BANNER (40px) ────────────────────────────
+    tft->fillRoundRect(X, y, W, 40, 6, UI_GREEN);
     tft->setTextSize(2);
-    tft->setTextColor(0x0000, UI_GREEN);  // black on green
-    tft->drawString("HEALTHY  Ã¢Å“â€œ", cx, y + badgeH / 2);
-    y += badgeH + 14;
+    tft->setTextColor(0x0000, UI_GREEN);
+    tft->drawString("PLANT IS HEALTHY", CX, y + 20);
+    y += 48;
 
-    // Ã¢â€â‚¬Ã¢â€â‚¬ HEALTH SCORE BAR Ã¢â€â‚¬Ã¢â€â‚¬
-    tft->setTextDatum(TL_DATUM);
+    // ── HEALTH SCORE BAR ────────────────────────────────────────
     tft->setTextSize(1);
+    tft->setTextDatum(TL_DATUM);
     tft->setTextColor(UI_CYAN);
-    tft->drawString("HEALTH SCORE", LM, y);
-
-    char hsBuf[12];
-    snprintf(hsBuf, sizeof(hsBuf), "%d%%", healthScore);
+    tft->drawString("HEALTH SCORE", X, y);
+    char hs[8]; snprintf(hs, sizeof(hs), "%d%%", hscore);
     tft->setTextDatum(TR_DATUM);
     tft->setTextColor(UI_GREEN);
-    tft->drawString(hsBuf, SW - LM, y);
+    tft->drawString(hs, 314, y);
     tft->setTextDatum(TL_DATUM);
-    y += 13;
+    y += 11;
+    tft->drawRect(X, y, W, 14, UI_MID_GRAY);
+    tft->fillRect(X + 2, y + 2, (W - 4) * hscore / 100, 10, UI_GREEN);
+    y += 18;
 
-    int barW = SW - LM * 2;
-    int barH = 16;
-    tft->drawRect(LM, y, barW, barH, UI_MID_GRAY);
-    int fillW = (barW - 4) * healthScore / 100;
-    tft->fillRect(LM + 2, y + 2, fillW, barH - 4, UI_GREEN);
-    y += barH + 14;
+    // ── DIVIDER ─────────────────────────────────────────────────
+    tft->drawFastHLine(0, y, 320, UI_MID_GRAY);
+    y += 4;
 
-    // Ã¢â€â‚¬Ã¢â€â‚¬ DIVIDER Ã¢â€â‚¬Ã¢â€â‚¬
-    tft->drawFastHLine(LM, y, SW - LM * 2, UI_DARK_GRAY);
-    y += 8;
-
-    // Ã¢â€â‚¬Ã¢â€â‚¬ CARE RECOMMENDATIONS Ã¢â€â‚¬Ã¢â€â‚¬
+    // ── CARE RECOMMENDATIONS ─────────────────────────────────────
     tft->setTextDatum(MC_DATUM);
     tft->setTextColor(UI_GREEN);
-    tft->drawString("CARE RECOMMENDATIONS", cx, y);
-    y += 15;
-
+    tft->drawString("CARE RECOMMENDATIONS", CX, y);
+    y += 13;
     tft->setTextDatum(TL_DATUM);
     tft->setTextColor(UI_WHITE);
-    int tStart = 0, tipCount = 0;
-    for (int i = 0; i <= (int)tips.length() && tipCount < 4; i++) {
-        if (i == (int)tips.length() || tips.charAt(i) == ';') {
-            String tip = tips.substring(tStart, i);
-            tip.trim();
-            if (tip.length() > 0) {
-                if (tip.length() > 38) tip = tip.substring(0, 37) + ".";
-                char tbuf[48];
-                snprintf(tbuf, sizeof(tbuf), "+ %s", tip.c_str());
-                tft->drawString(tbuf, LM + 4, y);
-                y += 13;
-                tipCount++;
-            }
-            tStart = i + 1;
-        }
-    }
+    drawListItems(tft, tips, X + 4, y, 6, 46, 13, ">");
 
-    // Ã¢â€â‚¬Ã¢â€â‚¬ AI SUMMARY (word-wrapped, 2 lines) Ã¢â€â‚¬Ã¢â€â‚¬
-    int footY = SH - 38;
-    tft->drawFastHLine(LM, footY, SW - LM * 2, UI_DARK_GRAY);
-    footY += 5;
-    tft->setTextColor(UI_DARK_CYAN);
-    tft->drawString("AI SUMMARY", LM, footY);
-    footY += 12;
+    // ── MOTIVATIONAL MESSAGE ─────────────────────────────────────
+    tft->drawFastHLine(0, y + 4, 320, UI_MID_GRAY);
+    y += 8;
+    tft->setTextDatum(MC_DATUM);
     tft->setTextColor(UI_LIGHT_GRAY);
-    drawWrappedText(tft, aiSummary, LM, footY, 42, 11, 2);
+    tft->drawString("Your crop looks great! Keep monitoring.", CX, y);
+    y += 13;
+    tft->drawString("Regular scans help catch issues early.", CX, y);
 
-    // Ã¢â€â‚¬Ã¢â€â‚¬ BOTTOM NAV HINT Ã¢â€â‚¬Ã¢â€â‚¬
-    tft->drawFastHLine(0, SH - 14, SW, UI_DARK_GRAY);
+    // ── BOTTOM DISMISS HINT ──────────────────────────────────────
+    tft->fillRect(0, 466, 320, 14, 0x1082);
+    tft->drawFastHLine(0, 466, 320, UI_MID_GRAY);
     tft->setTextDatum(MC_DATUM);
     tft->setTextColor(UI_GREEN);
-    tft->drawString("[BOOT] Dismiss", cx, SH - 7);
+    tft->drawString("[BOOT] Press to dismiss", CX, 473);
     tft->setTextDatum(TL_DATUM);
 }
 
-// â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”
-//  Button Handler (Software Polling)
-// â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”
 void handleButton() {
     static unsigned long lastDebounceTime = 0;
     static bool debouncedState = HIGH;

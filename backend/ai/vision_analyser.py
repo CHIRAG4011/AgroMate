@@ -121,6 +121,37 @@ Respond ONLY with a valid JSON object matching this schema:
 Do not write any comments, markdown blocks, introductory, or explanatory text. Return raw JSON.
 """
 
+PROMPT_ROBOT_SCAN = """
+You are an expert agronomist, botanist, and plant pathologist with 20+ years of experience.
+A farmer's robot just captured this close-up image of a plant/crop leaf with a 320x240 camera.
+Your task: analyze this image and return a complete diagnostic report.
+
+RULES:
+- Always provide your best assessment even for blurry/low-res images
+- Never refuse or say image quality is too poor
+- If healthy, set is_healthy=true and disease_name="Healthy"
+- symptoms_list: provide 3-4 comma-separated visible symptoms (e.g. "Yellow spots, Wilting edges, Brown lesions")
+- organic_treatment: 2-3 specific actionable organic remedies separated by semicolons
+- chemical_treatment: 1-2 specific chemical treatments separated by semicolons
+- ai_summary: 1-2 sentence plain-language summary for the farmer (max 100 chars)
+
+Respond ONLY with a valid JSON object:
+{
+  "plant_name": "Common crop name (e.g. Tomato, Rose, Wheat)",
+  "scientific_name": "Latin scientific name",
+  "confidence": 0.90,
+  "is_healthy": false,
+  "disease_name": "Exact disease name (or 'Healthy')",
+  "severity": "mild",
+  "health_score": 45,
+  "symptoms_list": "Brown spots;Yellowing edges;Leaf curl",
+  "organic_treatment": "Neem oil spray;Remove infected leaves;Improve drainage",
+  "chemical_treatment": "Copper fungicide spray;Mancozeb 75WP",
+  "ai_summary": "Plant shows early blight. Apply neem oil and remove infected leaves promptly."
+}
+Return raw JSON only. No markdown. No explanation.
+"""
+
 # Anti-rejection instructions appended to ALL prompts before sending
 _ANTI_REJECTION_SUFFIX = """
 
@@ -265,6 +296,8 @@ class VisionAnalyser:
             prompt = PROMPT_NUTRIENTS
         elif scan_type == "auto":
             prompt = PROMPT_AUTO
+        elif scan_type == "robot_scan":
+            prompt = PROMPT_ROBOT_SCAN
         else:
             logger.error(f"Invalid vision scan type: {scan_type}")
             return None
@@ -295,6 +328,34 @@ class VisionAnalyser:
                 return self._resolve_common_name(result)  # Return best-effort
 
         logger.warning("No LLM Vision APIs available — local fallback will handle this")
+        return None
+
+    async def analyze_robot_scan(self, image_data: bytes) -> Optional[Dict[str, Any]]:
+        """
+        Single-call comprehensive scan for the robot TFT display.
+        Uses PROMPT_ROBOT_SCAN which returns plant ID + disease + symptoms
+        + treatments + AI summary all in one Gemini call.
+        Returns dict or None.
+        """
+        enhanced = self._enhance_image_for_api(image_data)
+        prompt = PROMPT_ROBOT_SCAN + _ANTI_REJECTION_SUFFIX
+
+        # Try Gemini first
+        if self.settings.gemini_api_key:
+            result = await self._call_gemini_vision(enhanced, prompt)
+            if result and result is not _RATE_LIMITED:
+                logger.info(f"[robot_scan] Gemini OK: {result.get('plant_name')} / {result.get('disease_name')}")
+                return self._resolve_common_name(result)
+            logger.warning("[robot_scan] Gemini failed/rate-limited, trying OpenAI")
+
+        # Fallback to OpenAI
+        if self.settings.openai_api_key:
+            result = await self._call_openai_vision(enhanced, prompt)
+            if result and result is not _RATE_LIMITED:
+                logger.info(f"[robot_scan] OpenAI OK: {result.get('plant_name')} / {result.get('disease_name')}")
+                return self._resolve_common_name(result)
+
+        logger.warning("[robot_scan] All LLM APIs failed")
         return None
 
     async def _call_gemini_vision(self, image_data: bytes, prompt: str):
