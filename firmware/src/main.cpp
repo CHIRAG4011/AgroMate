@@ -870,8 +870,8 @@ static void drawWrap(TFT_eSPI* tft, const String& text,
         }
         String line = rem.substring(0, cut);
         line.trim();
-        char buf[64];
-        line.substring(0, 62).toCharArray(buf, sizeof(buf));
+        char buf[80];
+        line.substring(0, 78).toCharArray(buf, sizeof(buf));
         tft->drawString(buf, x, y);
         y += step;
         rem = rem.substring(cut);
@@ -881,37 +881,45 @@ static void drawWrap(TFT_eSPI* tft, const String& text,
 }
 
 // =============================================================
-//  DISEASE RESULT SCREEN  (320 x 480 portrait)
-//  Every element uses a FIXED y coordinate. No overlap possible.
+//  DISEASE RESULT SCREEN  (480 x 320 LANDSCAPE)
 //
-//  Pixel map (all values are absolute y):
-//    0-34   Header bar (red)
-//   40      Plant name (size 2)
-//   62      Scientific name (size 1)
-//   76      Confidence % (size 1)
-//   90      --- divider ---
-//   98      "DIAGNOSIS:" label
-//  112      Disease name (size 2, amber)
-//  136      [SEVERITY] [DISEASED] badges
-//  158      --- divider ---
-//  166      HEALTH SCORE label + %
-//  180      Health bar (14px)
-//  200      --- divider ---
-//  210      "SYMPTOMS:" label
-//  226      symptom 1
-//  242      symptom 2
-//  258      symptom 3
-//  278      --- divider ---
-//  288      "TREATMENT:" label
-//  304      treatment 1
-//  320      treatment 2
-//  336      treatment 3
-//  358      --- divider ---
-//  366      "AI SUMMARY:" label
-//  382      summary line 1
-//  398      summary line 2
-//  414      summary line 3
-//  466-480  [BOOT] dismiss footer
+//  Two-column layout:
+//    LEFT  (x: 6..235)  = Plant info + diagnosis + badges
+//    RIGHT (x: 245..474) = Symptoms + Treatment + AI Summary
+//    BOTTOM (y: 306-320)  = Dismiss footer
+//
+//  Pixel map (all y values absolute):
+//    0-28    Header bar (red)
+//    LEFT COLUMN:
+//      34    Plant name (size 2)
+//      56    Scientific name
+//      70    Confidence
+//      84    --- divider ---
+//      92    DIAGNOSIS: label
+//     106    Disease name (size 2)
+//     130    [SEVERITY] [DISEASED] badges
+//     152    --- divider ---
+//     162    HEALTH SCORE label + %
+//     176    Health bar
+//     196    --- divider ---
+//     206    AI SUMMARY:
+//     220    summary line 1
+//     234    summary line 2
+//     248    summary line 3
+//    RIGHT COLUMN:
+//      34    SYMPTOMS: label
+//      48    sym 1
+//      62    sym 2
+//      76    sym 3
+//      94    --- divider ---
+//     104    TREATMENT: label
+//     118    treat 1
+//     132    treat 2
+//     146    treat 3
+//     164    --- divider ---
+//     174    (extra space)
+//    FOOTER:
+//     306-320  [BOOT] dismiss
 // =============================================================
 void drawDiseaseResultScreen() {
     TFT_eSPI* tft = display.getTFT();
@@ -930,145 +938,150 @@ void drawDiseaseResultScreen() {
     String disease = (fi > 4) ? f[4] : "Unknown";
     String sev     = (fi > 5) ? f[5] : "MODERATE";
     int    score   = (fi > 6) ? f[6].toInt() : 50;
-    String symp    = (fi > 7) ? f[7] : "";
-    String treat   = (fi > 8) ? f[8] : "";
+    String symp    = (fi > 7) ? f[7] : "Discoloration;Leaf damage";
+    String treat   = (fi > 8) ? f[8] : "Monitor plant health";
     String summ    = (fi > 9) ? f[9] : "";
 
     sev.toUpperCase();
-    if (plant.length()   > 22) plant   = plant.substring(0, 21)   + "..";
-    if (sci.length()     > 40) sci     = sci.substring(0, 39)     + "..";
-    if (disease.length() > 22) disease = disease.substring(0, 21) + "..";
+    if (plant.length()   > 18) plant   = plant.substring(0, 17)   + "..";
+    if (sci.length()     > 32) sci     = sci.substring(0, 31)     + "..";
+    if (disease.length() > 18) disease = disease.substring(0, 17) + "..";
 
-    // === HEADER (y: 0-34) ===
-    tft->fillRect(0, 0, 320, 34, UI_DARK_RED);
-    tft->drawFastHLine(0, 34, 320, UI_RED);
+    const int LX = 6;    // left column x
+    const int RX = 248;  // right column x
+    const int CX = 240;  // center x for header
+
+    // ============ HEADER BAR (y: 0-28) ============
+    tft->fillRect(0, 0, 480, 28, UI_DARK_RED);
+    tft->drawFastHLine(0, 28, 480, UI_RED);
     tft->setTextDatum(MC_DATUM);
     tft->setTextSize(1);
     tft->setTextColor(UI_WHITE, UI_DARK_RED);
-    tft->drawString("AGROMATE - DISEASE DETECTED", 160, 17);
+    tft->drawString("AGROMATE - DISEASE DETECTED", CX, 14);
     tft->setTextDatum(TL_DATUM);
 
-    // === PLANT NAME (y: 40, size 2) ===
+    // ============ LEFT COLUMN ============
+
+    // Plant name (y:34, size 2)
     tft->setTextSize(2);
     tft->setTextColor(UI_WHITE);
-    tft->drawString(plant, 8, 40);
+    tft->drawString(plant, LX, 34);
 
-    // === SCIENTIFIC NAME (y: 62, size 1) ===
+    // Sci name (y:56)
     tft->setTextSize(1);
     tft->setTextColor(UI_LIGHT_GRAY);
-    if (sci.length() > 0) tft->drawString(sci, 8, 62);
+    if (sci.length() > 0) tft->drawString(sci, LX, 56);
 
-    // === CONFIDENCE (y: 76) ===
+    // Confidence (y:70)
     char cb[32]; snprintf(cb, sizeof(cb), "Confidence: %s%%", conf.c_str());
     tft->setTextColor(UI_DARK_CYAN);
-    tft->drawString(cb, 8, 76);
+    tft->drawString(cb, LX, 70);
 
-    // === DIVIDER (y: 90) ===
-    tft->drawFastHLine(8, 90, 304, UI_MID_GRAY);
+    // Divider (y:84)
+    tft->drawFastHLine(LX, 84, 230, UI_MID_GRAY);
 
-    // === DIAGNOSIS LABEL (y: 98) ===
+    // DIAGNOSIS label (y:92)
     tft->setTextColor(UI_CYAN);
-    tft->drawString("DIAGNOSIS:", 8, 98);
+    tft->drawString("DIAGNOSIS:", LX, 92);
 
-    // === DISEASE NAME (y: 112, size 2) ===
+    // Disease name (y:106, size 2)
     tft->setTextSize(2);
     tft->setTextColor(UI_AMBER);
-    tft->drawString(disease, 8, 112);
+    tft->drawString(disease, LX, 106);
     tft->setTextSize(1);
 
-    // === SEVERITY + DISEASED BADGES (y: 136) ===
+    // Severity + Diseased badges (y:130)
     uint16_t sc = UI_YELLOW;
     if      (sev == "SEVERE" || sev == "HIGH") sc = UI_RED;
     else if (sev == "MILD"   || sev == "LOW")  sc = UI_GREEN;
     else if (sev == "CRITICAL")                 sc = 0xF81F;
-    tft->fillRoundRect(8, 136, 96, 18, 4, sc);
+    tft->fillRoundRect(LX, 130, 90, 16, 4, sc);
     tft->setTextDatum(MC_DATUM);
     tft->setTextColor(0x0000);
-    tft->drawString(sev, 56, 145);
-    tft->fillRoundRect(112, 136, 80, 18, 4, UI_RED);
+    tft->drawString(sev, LX + 45, 138);
+    tft->fillRoundRect(LX + 98, 130, 76, 16, 4, UI_RED);
     tft->setTextColor(UI_WHITE);
-    tft->drawString("DISEASED", 152, 145);
+    tft->drawString("DISEASED", LX + 136, 138);
     tft->setTextDatum(TL_DATUM);
 
-    // === DIVIDER (y: 158) ===
-    tft->drawFastHLine(8, 158, 304, UI_MID_GRAY);
+    // Divider (y:152)
+    tft->drawFastHLine(LX, 152, 230, UI_MID_GRAY);
 
-    // === HEALTH SCORE LABEL + % (y: 166) ===
+    // Health score label + % (y:162)
     tft->setTextColor(UI_CYAN);
-    tft->drawString("HEALTH SCORE", 8, 166);
+    tft->drawString("HEALTH SCORE", LX, 162);
     char hs[8]; snprintf(hs, sizeof(hs), "%d%%", score);
     tft->setTextDatum(TR_DATUM);
     uint16_t bc = (score > 60) ? UI_GREEN : (score > 30) ? UI_YELLOW : UI_RED;
     tft->setTextColor(bc);
-    tft->drawString(hs, 312, 166);
+    tft->drawString(hs, 234, 162);
     tft->setTextDatum(TL_DATUM);
 
-    // === HEALTH BAR (y: 180, 14px tall) ===
-    tft->drawRect(8, 180, 304, 14, UI_MID_GRAY);
-    tft->fillRect(10, 182, (300 * score) / 100, 10, bc);
+    // Health bar (y:176, 12px tall)
+    tft->drawRect(LX, 176, 228, 12, UI_MID_GRAY);
+    tft->fillRect(LX + 2, 178, (224 * score) / 100, 8, bc);
 
-    // === DIVIDER (y: 200) ===
-    tft->drawFastHLine(8, 200, 304, UI_MID_GRAY);
+    // Divider (y:196)
+    tft->drawFastHLine(LX, 196, 230, UI_MID_GRAY);
 
-    // === SYMPTOMS (label y:210, items y:226/242/258) ===
-    tft->setTextColor(UI_CYAN);
-    tft->drawString("SYMPTOMS:", 8, 210);
-    tft->setTextColor(UI_AMBER);
-    drawItems(tft, symp, 12, 226, 16, 3, 44, "*");
-
-    // === DIVIDER (y: 278) ===
-    tft->drawFastHLine(8, 278, 304, UI_MID_GRAY);
-
-    // === TREATMENT (label y:288, items y:304/320/336) ===
-    tft->setTextColor(UI_GREEN);
-    tft->drawString("TREATMENT:", 8, 288);
-    tft->setTextColor(UI_WHITE);
-    drawItems(tft, treat, 12, 304, 16, 3, 44, "+");
-
-    // === DIVIDER (y: 358) ===
-    tft->drawFastHLine(8, 358, 304, UI_MID_GRAY);
-
-    // === AI SUMMARY (label y:366, lines y:382/398/414) ===
+    // AI Summary (y:206 label, y:220/234/248 lines)
     tft->setTextColor(UI_DARK_CYAN);
-    tft->drawString("AI SUMMARY:", 8, 366);
+    tft->drawString("AI SUMMARY:", LX, 206);
     tft->setTextColor(UI_LIGHT_GRAY);
     if (summ.length() > 0) {
-        drawWrap(tft, summ, 8, 382, 16, 3, 48);
+        drawWrap(tft, summ, LX, 220, 14, 3, 36);
     }
 
-    // === BOTTOM FOOTER (y: 466-480) ===
-    tft->fillRect(0, 466, 320, 14, 0x1082);
-    tft->drawFastHLine(0, 466, 320, UI_MID_GRAY);
+    // ============ VERTICAL DIVIDER ============
+    tft->drawFastVLine(240, 30, 274, UI_MID_GRAY);
+
+    // ============ RIGHT COLUMN ============
+
+    // SYMPTOMS label (y:34)
+    tft->setTextColor(UI_CYAN);
+    tft->drawString("SYMPTOMS:", RX, 34);
+
+    // Symptoms items (y:50/66/82, step=16)
+    tft->setTextColor(UI_AMBER);
+    drawItems(tft, symp, RX + 4, 50, 16, 3, 34, "*");
+
+    // Divider (y:100)
+    tft->drawFastHLine(RX, 100, 226, UI_MID_GRAY);
+
+    // TREATMENT label (y:110)
+    tft->setTextColor(UI_GREEN);
+    tft->drawString("TREATMENT:", RX, 110);
+
+    // Treatment items (y:126/142/158, step=16)
+    tft->setTextColor(UI_WHITE);
+    drawItems(tft, treat, RX + 4, 126, 16, 3, 34, "+");
+
+    // ============ BOTTOM FOOTER (y: 306-320) ============
+    tft->fillRect(0, 306, 480, 14, 0x1082);
+    tft->drawFastHLine(0, 306, 480, UI_MID_GRAY);
     tft->setTextDatum(MC_DATUM);
     tft->setTextColor(UI_GREEN);
-    tft->drawString("Press BOOT to dismiss", 160, 473);
+    tft->drawString("Press BOOT to dismiss", CX, 313);
     tft->setTextDatum(TL_DATUM);
 }
 
 // =============================================================
-//  HEALTHY RESULT SCREEN  (320 x 480 portrait)
+//  HEALTHY RESULT SCREEN  (480 x 320 LANDSCAPE)
 //
+//  Centered single-column layout
 //  Pixel map:
-//    0-34   Header bar (green)
-//   44      Plant name (size 2, centred)
-//   68      Scientific name (size 1, centred)
-//   84      Confidence % (centred)
-//  100      --- divider ---
-//  110      HEALTHY banner (36px, green bg)
-//  152      --- divider ---
-//  162      HEALTH SCORE label + %
-//  178      Health bar (14px)
-//  200      --- divider ---
-//  212      CARE RECOMMENDATIONS label
-//  230      > tip 1
-//  248      > tip 2
-//  266      > tip 3
-//  284      > tip 4
-//  306      --- divider ---
-//  318      "Your crop looks healthy!"
-//  336      "Keep monitoring regularly."
-//  360      "Scan again in 7 days."
-//  466-480  [BOOT] dismiss footer
+//    0-28    Header bar (green)
+//   38      Plant name (size 2, centred)
+//   62      Sci name (centred)
+//   78      Confidence (centred)
+//   94      --- divider ---
+//  104      HEALTHY banner (30px, green bg)
+//  142      --- divider ---
+//  152      HEALTH SCORE + % + bar
+//  180      --- divider ---
+//  192      CARE RECOMMENDATIONS label
+//  210/228/246/264  Tips (4 items, 18px step)
+//  306-320  [BOOT] dismiss footer
 // =============================================================
 void drawHealthyResultScreen() {
     TFT_eSPI* tft = display.getTFT();
@@ -1087,89 +1100,85 @@ void drawHealthyResultScreen() {
     int    score = (fi > 4) ? f[4].toInt() : 95;
     String tips  = (fi > 5) ? f[5] : "Water regularly;Ensure sunlight;Good drainage;Apply compost";
 
-    if (plant.length() > 22) plant = plant.substring(0, 21) + "..";
-    if (sci.length()   > 40) sci   = sci.substring(0, 39)   + "..";
+    if (plant.length() > 30) plant = plant.substring(0, 29) + "..";
+    if (sci.length()   > 50) sci   = sci.substring(0, 49)   + "..";
 
-    // === HEADER (y: 0-34, green) ===
-    tft->fillRect(0, 0, 320, 34, UI_DARK_GREEN);
-    tft->drawFastHLine(0, 34, 320, UI_GREEN);
+    const int CX = 240;  // center x
+    const int MX = 40;   // margin x
+
+    // ============ HEADER (y: 0-28, green) ============
+    tft->fillRect(0, 0, 480, 28, UI_DARK_GREEN);
+    tft->drawFastHLine(0, 28, 480, UI_GREEN);
     tft->setTextDatum(MC_DATUM);
     tft->setTextSize(1);
     tft->setTextColor(UI_WHITE, UI_DARK_GREEN);
-    tft->drawString("AGROMATE - PLANT SCAN RESULT", 160, 17);
+    tft->drawString("AGROMATE - PLANT SCAN RESULT", CX, 14);
 
-    // === PLANT NAME (y: 44, size 2, centred) ===
+    // Plant name (y:38, size 2, centred)
     tft->setTextSize(2);
     tft->setTextColor(UI_WHITE);
-    tft->drawString(plant, 160, 44);
+    tft->drawString(plant, CX, 38);
 
-    // === SCIENTIFIC NAME (y: 68, centred) ===
+    // Sci name (y:62, centred)
     tft->setTextSize(1);
     tft->setTextColor(UI_LIGHT_GRAY);
-    if (sci.length() > 0) tft->drawString(sci, 160, 68);
+    if (sci.length() > 0) tft->drawString(sci, CX, 62);
 
-    // === CONFIDENCE (y: 84, centred) ===
+    // Confidence (y:78, centred)
     char cb[32]; snprintf(cb, sizeof(cb), "Confidence: %s%%", conf.c_str());
     tft->setTextColor(UI_DARK_CYAN);
-    tft->drawString(cb, 160, 84);
+    tft->drawString(cb, CX, 78);
 
-    // === DIVIDER (y: 100) ===
-    tft->drawFastHLine(8, 100, 304, UI_MID_GRAY);
+    // Divider (y:94)
+    tft->drawFastHLine(MX, 94, 400, UI_MID_GRAY);
 
-    // === HEALTHY BANNER (y: 110, 36px tall) ===
-    tft->fillRoundRect(8, 110, 304, 36, 6, UI_GREEN);
+    // HEALTHY banner (y:104, 30px tall)
+    tft->fillRoundRect(MX, 104, 400, 30, 6, UI_GREEN);
     tft->setTextSize(2);
     tft->setTextColor(0x0000, UI_GREEN);
-    tft->drawString("PLANT IS HEALTHY", 160, 128);
+    tft->drawString("PLANT IS HEALTHY", CX, 119);
 
-    // === DIVIDER (y: 152) ===
-    tft->drawFastHLine(8, 152, 304, UI_MID_GRAY);
+    // Divider (y:142)
+    tft->drawFastHLine(MX, 142, 400, UI_MID_GRAY);
 
-    // === HEALTH SCORE (y: 162) ===
+    // Health score (y:152)
     tft->setTextSize(1);
     tft->setTextDatum(TL_DATUM);
     tft->setTextColor(UI_CYAN);
-    tft->drawString("HEALTH SCORE", 8, 162);
+    tft->drawString("HEALTH SCORE", MX, 152);
     char hs[8]; snprintf(hs, sizeof(hs), "%d%%", score);
     tft->setTextDatum(TR_DATUM);
     tft->setTextColor(UI_GREEN);
-    tft->drawString(hs, 312, 162);
+    tft->drawString(hs, 480 - MX, 152);
     tft->setTextDatum(TL_DATUM);
 
-    // === HEALTH BAR (y: 178, 14px) ===
-    tft->drawRect(8, 178, 304, 14, UI_MID_GRAY);
-    tft->fillRect(10, 180, (300 * score) / 100, 10, UI_GREEN);
+    // Health bar (y:168, 12px)
+    int bw = 400;
+    tft->drawRect(MX, 168, bw, 12, UI_MID_GRAY);
+    tft->fillRect(MX + 2, 170, (bw - 4) * score / 100, 8, UI_GREEN);
 
-    // === DIVIDER (y: 200) ===
-    tft->drawFastHLine(8, 200, 304, UI_MID_GRAY);
+    // Divider (y:186)
+    tft->drawFastHLine(MX, 186, 400, UI_MID_GRAY);
 
-    // === CARE RECOMMENDATIONS label (y: 212, centred) ===
+    // CARE RECOMMENDATIONS label (y:196, centred)
     tft->setTextDatum(MC_DATUM);
     tft->setTextColor(UI_GREEN);
-    tft->drawString("CARE RECOMMENDATIONS", 160, 212);
+    tft->drawString("CARE RECOMMENDATIONS", CX, 196);
     tft->setTextDatum(TL_DATUM);
 
-    // === TIPS (y: 230/248/266/284, 18px step) ===
+    // Tips (y:212/230/248/266, 18px step)
     tft->setTextColor(UI_WHITE);
-    drawItems(tft, tips, 12, 230, 18, 4, 44, ">");
+    drawItems(tft, tips, MX + 4, 212, 18, 4, 60, ">");
 
-    // === DIVIDER (y: 306) ===
-    tft->drawFastHLine(8, 306, 304, UI_MID_GRAY);
-
-    // === MOTIVATIONAL MESSAGES (y: 318/336/360) ===
+    // ============ BOTTOM FOOTER (y: 306-320) ============
+    tft->fillRect(0, 306, 480, 14, 0x1082);
+    tft->drawFastHLine(0, 306, 480, UI_MID_GRAY);
     tft->setTextDatum(MC_DATUM);
-    tft->setTextColor(UI_LIGHT_GRAY);
-    tft->drawString("Your crop looks healthy!", 160, 318);
-    tft->drawString("Keep monitoring regularly for", 160, 338);
-    tft->drawString("best results. Scan again soon.", 160, 358);
-
-    // === BOTTOM FOOTER (y: 466-480) ===
-    tft->fillRect(0, 466, 320, 14, 0x1082);
-    tft->drawFastHLine(0, 466, 320, UI_MID_GRAY);
     tft->setTextColor(UI_GREEN);
-    tft->drawString("Press BOOT to dismiss", 160, 473);
+    tft->drawString("Press BOOT to dismiss", CX, 313);
     tft->setTextDatum(TL_DATUM);
 }
+
 
 
 
