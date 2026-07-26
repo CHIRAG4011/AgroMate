@@ -132,22 +132,22 @@ class VoiceRecognizer:
         if sample_rate != 16000:
             audio_data = resample_audio(audio_data, sample_rate, 16000)
 
-        # Try Gemini STT first (extremely fast and accurate multilingual transcription)
-        if self.settings.gemini_api_key:
-            result = await self._recognize_gemini(audio_data, language, sample_rate)
-            if result and result.text.strip():
-                return result
+        # 1. Try Google Speech Recognition API first (high-speed online STT, 200ms response)
+        result = await self._recognize_google(audio_data, language, sample_rate)
+        if result and result.text.strip():
+            return result
 
-        # Try Vosk (offline) first
+        # 2. Try Vosk (offline fast local STT)
         if self._vosk_available and language in self._vosk_models:
             result = await self._recognize_vosk(audio_data, language)
             if result and result.text.strip():
                 return result
 
-        # Fallback to Google Speech API (supports all 23 languages)
-        result = await self._recognize_google(audio_data, language, sample_rate)
-        if result:
-            return result
+        # 3. Fallback to Gemini 2.5 Multimodal Audio
+        if self.settings.gemini_api_key:
+            result = await self._recognize_gemini(audio_data, language, sample_rate)
+            if result and result.text.strip():
+                return result
 
         logger.warning("Speech recognition failed on all engines")
         return None

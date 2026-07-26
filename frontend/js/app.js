@@ -442,6 +442,10 @@ class STTRecorder {
     if (!this.isRecording) return;
     this.isRecording = false;
     if (this.buttonEl) this.buttonEl.classList.remove('recording');
+
+    const inputEl = document.getElementById('chatInput');
+    const capturedText = inputEl ? inputEl.value.trim() : '';
+
     if (this.recognition) {
       try { this.recognition.stop(); } catch(e) {}
     }
@@ -451,6 +455,14 @@ class STTRecorder {
         this.mediaRecorder.stream.getTracks().forEach(t => t.stop());
       } catch(e) {}
     }
+
+    if (capturedText && this.onTranscriptionCallback) {
+      const cb = this.onTranscriptionCallback;
+      this.onTranscriptionCallback = null;
+      cb(capturedText);
+    }
+
+    setTimeout(() => { if (typeof initGlobalVoiceCommander === 'function') initGlobalVoiceCommander(); }, 1000);
   }
 
   async uploadAndTranscribe(audioBlob) {
