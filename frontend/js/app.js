@@ -189,9 +189,7 @@ class TTSPlayer {
 
     // Update label
     const label = document.getElementById('ttsPlayerLabel');
-    if (label) label.textContent = 'Generating speech...';
-    
-    const engine = localStorage.getItem('agromate-voice-engine') || 'gemini';
+    if (label) label.textCo    const engine = localStorage.getItem('agromate-voice-engine') || 'edge-tts';
     const gender = localStorage.getItem('agromate-voice-gender') || 'female';
 
     try {
@@ -227,7 +225,7 @@ class TTSPlayer {
     const label = document.getElementById('ttsPlayerLabel');
     if (label) label.textContent = 'Analyzing report sections...';
 
-    const engine = localStorage.getItem('agromate-voice-engine') || 'gemini';
+    const engine = localStorage.getItem('agromate-voice-engine') || 'edge-tts';
     const gender = localStorage.getItem('agromate-voice-gender') || 'female';
 
     try {
@@ -326,67 +324,138 @@ const ttsPlayer = new TTSPlayer();
 
 
 /* ============================================================
-   SPEECH-TO-TEXT (STT) RECORDING MODULE
+   SPEECH-TO-TEXT (STT) RECORDING MODULE — Instant Dual Engine
    ============================================================ */
 
 class STTRecorder {
   constructor() {
-    this.mediaRecorder = null;
-    this.audioChunks = [];
     this.isRecording = false;
     this.onTranscriptionCallback = null;
+    this.recognition = null;
+    this.buttonEl = null;
+    this.mediaRecorder = null;
+    this.audioChunks = [];
   }
 
   async start(buttonEl, onTranscription) {
-    if (this.isRecording) return;
+    if (this.isRecording) {
+      this.stop();
+      return;
+    }
+
+    this.buttonEl = buttonEl;
     this.onTranscriptionCallback = onTranscription;
 
+    // Pause global voice commander if active to prevent mic contention
+    if (globalVoiceRecognition) {
+      try { globalVoiceRecognition.stop(); } catch(e) {}
+    }
+
+    // Stop active TTS audio if playing
+    if (typeof ttsPlayer !== 'undefined') ttsPlayer.stop();
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (SpeechRecognition) {
+      // Modern Web Speech API (Instant, live interim results, zero latency)
+      try {
+        const rec = new SpeechRecognition();
+        this.recognition = rec;
+        rec.continuous = false;
+        rec.interimResults = true;
+
+        const langMap = { hi: 'hi-IN', gu: 'gu-IN', mr: 'mr-IN', ta: 'ta-IN', te: 'te-IN', bn: 'bn-IN', pa: 'pa-IN', ur: 'ur-PK' };
+        rec.lang = langMap[currentLanguage] || 'en-IN';
+
+        let finalTranscript = '';
+
+        rec.onstart = () => {
+          this.isRecording = true;
+          if (this.buttonEl) this.buttonEl.classList.add('recording');
+          showToast(i18n.t('listening') || '🎙️ Listening...', 'info');
+        };
+
+        rec.onresult = (event) => {
+          let interim = '';
+          for (let i = event.resultIndex; i < event.results.length; ++i) {
+            if (event.results[i].isFinal) {
+              finalTranscript += event.results[i][0].transcript;
+            } else {
+              interim += event.results[i][0].transcript;
+            }
+          }
+          const text = finalTranscript || interim;
+          const inputEl = document.getElementById('chatInput');
+          if (inputEl && text) {
+            inputEl.value = text;
+          }
+        };
+
+        rec.onerror = (e) => {
+          console.warn('SpeechRecognition error:', e.error);
+          this.fallbackMediaRecorder(buttonEl);
+        };
+
+        rec.onend = () => {
+          this.isRecording = false;
+          if (this.buttonEl) this.buttonEl.classList.remove('recording');
+          if (finalTranscript.trim() && this.onTranscriptionCallback) {
+            this.onTranscriptionCallback(finalTranscript.trim());
+          }
+          setTimeout(() => { if (typeof initGlobalVoiceCommander === 'function') initGlobalVoiceCommander(); }, 1000);
+        };
+
+        rec.start();
+        return;
+      } catch (err) {
+        console.warn('SpeechRecognition start failed, trying fallback:', err);
+      }
+    }
+
+    // Fallback to MediaRecorder upload
+    this.fallbackMediaRecorder(buttonEl);
+  }
+
+  async fallbackMediaRecorder(buttonEl) {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       this.audioChunks = [];
       this.mediaRecorder = new MediaRecorder(stream);
-      
-      this.mediaRecorder.ondataavailable = (event) => {
-        this.audioChunks.push(event.data);
-      };
-
+      this.mediaRecorder.ondataavailable = (e) => this.audioChunks.push(e.data);
       this.mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(this.audioChunks, { type: 'audio/wav' });
-        
-        // Visual indicator back to normal
-        buttonEl.classList.remove('recording');
-        
-        // Upload & transcribe
-        const text = await this.uploadAndTranscribe(audioBlob);
-        if (this.onTranscriptionCallback) {
-          this.onTranscriptionCallback(text);
-        }
+        const blob = new Blob(this.audioChunks, { type: 'audio/webm' });
+        if (buttonEl) buttonEl.classList.remove('recording');
+        const text = await this.uploadAndTranscribe(blob);
+        if (text && this.onTranscriptionCallback) this.onTranscriptionCallback(text);
       };
-
       this.mediaRecorder.start();
       this.isRecording = true;
-      
-      // Visual indicator
-      buttonEl.classList.add('recording');
-      showToast(i18n.t('listening'), 'info');
-
+      if (buttonEl) buttonEl.classList.add('recording');
+      showToast(i18n.t('listening') || '🎙️ Listening...', 'info');
     } catch (err) {
-      console.error('Failed to start microphone recording:', err);
-      showToast('Microphone access denied or error occurred', 'error');
+      console.error('Microphone error:', err);
+      showToast('Microphone access denied', 'error');
     }
   }
 
   stop() {
     if (!this.isRecording) return;
-    this.mediaRecorder.stop();
-    // Stop all media tracks
-    this.mediaRecorder.stream.getTracks().forEach(track => track.stop());
     this.isRecording = false;
+    if (this.buttonEl) this.buttonEl.classList.remove('recording');
+    if (this.recognition) {
+      try { this.recognition.stop(); } catch(e) {}
+    }
+    if (this.mediaRecorder && this.mediaRecorder.state !== 'inactive') {
+      try {
+        this.mediaRecorder.stop();
+        this.mediaRecorder.stream.getTracks().forEach(t => t.stop());
+      } catch(e) {}
+    }
   }
 
   async uploadAndTranscribe(audioBlob) {
     const formData = new FormData();
-    formData.append('file', audioBlob, 'voice.wav');
+    formData.append('file', audioBlob, 'voice.webm');
 
     // Display loader
     showToast(i18n.t('thinking'), 'info');
