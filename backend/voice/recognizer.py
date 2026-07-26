@@ -236,14 +236,27 @@ class VoiceRecognizer:
 
                 if response.status_code == 200:
                     data = response.json()
-                    text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
-                    if text:
-                        return RecognitionResult(
-                            text=text,
-                            language=language,
-                            confidence=0.95,
-                            engine_used="gemini",
-                        )
+                    candidates = data.get("candidates", [])
+                    if candidates:
+                        content = candidates[0].get("content", {})
+                        parts = content.get("parts", [])
+                        if parts:
+                            text = parts[0].get("text", "").strip()
+                            # Clean up placeholder brackets or silence indicators
+                            clean_text = text.lower().strip(" .[](),*")
+                            silence_indicators = [
+                                "no speech", "silence", "noise", "no audio", "background noise", 
+                                "નો સ્પીચ", "કોઈ અવાજ નથી", "कोई आवाज नहीं", "बिना आवाज", "અવાજ નથી"
+                            ]
+                            if not clean_text or any(indicator in clean_text for indicator in silence_indicators):
+                                return None
+                                
+                            return RecognitionResult(
+                                text=text,
+                                language=language,
+                                confidence=0.95,
+                                engine_used="gemini",
+                            )
         except Exception as e:
             logger.error(f"Gemini speech recognition failed: {e}")
         return None

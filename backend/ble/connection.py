@@ -103,13 +103,13 @@ class RobotConnection:
 
             logger.info(
                 f"Robot {self.name} ({self.mac_address}): "
-                f"{old_state.value} → {new_state.value}"
+                f"{old_state.value} -> {new_state.value}"
             )
             return True
         else:
             logger.warning(
                 f"Invalid transition for {self.name}: "
-                f"{self.state.value} → {new_state.value}"
+                f"{self.state.value} -> {new_state.value}"
             )
             return False
 
@@ -121,7 +121,7 @@ class RobotConnection:
     def enqueue_message(self, message: BLEMessage) -> bool:
         """Add a message to the outgoing queue."""
         if len(self.message_queue) >= self.message_queue.maxlen:
-            logger.warning(f"Message queue full for robot {self.name}")
+            logger.debug(f"Message queue full for robot {self.name}, dropping oldest")
             return False
 
         message.sequence = self.next_sequence()
@@ -268,7 +268,7 @@ class ConnectionManager:
                 return robot
         return None
 
-    async def send_message(self, robot_id: str, message: BLEMessage) -> bool:
+    async def send_message(self, robot_id: str, message: BLEMessage, response: bool = True) -> bool:
         """Send a BLE message to a specific robot."""
         robot = self._robots.get(robot_id)
         if not robot:
@@ -276,18 +276,23 @@ class ConnectionManager:
             return False
 
         if robot.state != ConnectionState.ACTIVE:
-            logger.warning(f"Robot {robot.name} not active, queueing message")
+            logger.debug(f"Robot {robot.name} not active, queueing message")
             return robot.enqueue_message(message)
 
         try:
             if robot._client and robot._client.is_connected:
-                from .protocol import BLE_CHAR_UUIDS
+                from .protocol import BLE_CHAR_UUIDS, MessageType
+
+                # Route speech audio chunk messages to the dedicated audio RX characteristic
+                char_key = "cmd_tx"
+                if message.msg_type == MessageType.SPEECH_AUDIO:
+                    char_key = "audio_rx"
 
                 encoded = message.encode()
                 await robot._client.write_gatt_char(
-                    BLE_CHAR_UUIDS["cmd_tx"],
+                    BLE_CHAR_UUIDS[char_key],
                     encoded,
-                    response=True,
+                    response=response,
                 )
                 robot.total_messages_sent += 1
                 robot.total_bytes_sent += len(encoded)
@@ -317,11 +322,13 @@ class ConnectionManager:
             logger.warning(f"Message from unknown robot: {robot_id}")
             return
 
+        robot.update_heartbeat()
         robot.total_messages_received += 1
         robot.total_bytes_received += len(message.payload) + 11
 
+        logger.debug(f"Received BLE message from {robot.name}: type=0x{message.msg_type:02X}, size={len(message.payload)} bytes")
+
         if message.msg_type == MessageType.HEARTBEAT:
-            robot.update_heartbeat()
             self._emit("heartbeat", robot)
 
         elif message.msg_type == MessageType.SENSOR_DATA:
@@ -332,6 +339,7 @@ class ConnectionManager:
             self._emit("sensor_data", robot, data)
 
         elif message.msg_type == MessageType.IMAGE_CHUNK:
+            logger.info(f"Received IMAGE_CHUNK frame, payload size={len(message.payload)} bytes")
             self._emit("image_chunk", robot, message.payload, message.sequence)
 
         elif message.msg_type == MessageType.AUDIO_CHUNK:
@@ -354,12 +362,14 @@ class ConnectionManager:
             import struct
             if len(message.payload) >= 13:
                 transfer_id, total_size, total_chunks, data_type = struct.unpack("<IIIB", message.payload[:13])
+                logger.info(f"Received CHUNK_START notification: id={transfer_id}, size={total_size}, chunks={total_chunks}, type=0x{data_type:02X}")
                 self._emit("chunk_start", robot, transfer_id, total_size, total_chunks, data_type)
 
         elif message.msg_type == MessageType.CHUNK_END:
             import struct
             if len(message.payload) >= 8:
                 transfer_id, checksum = struct.unpack("<II", message.payload[:8])
+                logger.info(f"Received CHUNK_END notification: id={transfer_id}, checksum=0x{checksum:08X}")
                 self._emit("chunk_end", robot, transfer_id, checksum)
 
         elif message.msg_type == MessageType.ERROR_REPORT:

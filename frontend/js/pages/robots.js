@@ -116,16 +116,16 @@ async function loadRobots() {
 }
 
 // AgroMate BLE Service & Characteristic UUIDs (must match firmware config.h)
-const AGROMATE_BLE_SERVICE_UUID = '12345678-1234-5678-1234-56789abcde01';
+const AGROMATE_BLE_SERVICE_UUID = '12345678-1234-5678-1234-56789abcde99';
 const AGROMATE_BLE_CHAR = {
-  CMD_TX:    '12345678-1234-5678-1234-56789abcdf01', // Laptop → ESP
-  CMD_RX:    '12345678-1234-5678-1234-56789abcdf02', // ESP → Laptop
-  IMG_TX:    '12345678-1234-5678-1234-56789abcdf03',
-  AUDIO_TX:  '12345678-1234-5678-1234-56789abcdf04',
-  AUDIO_RX:  '12345678-1234-5678-1234-56789abcdf05',
-  BATTERY:   '12345678-1234-5678-1234-56789abcdf06',
-  SENSORS:   '12345678-1234-5678-1234-56789abcdf07',
-  HEARTBEAT: '12345678-1234-5678-1234-56789abcdf08',
+  CMD_TX:    '12345678-1234-5678-1234-56789abcdf91', // Laptop → ESP
+  CMD_RX:    '12345678-1234-5678-1234-56789abcdf92', // ESP → Laptop
+  IMG_TX:    '12345678-1234-5678-1234-56789abcdf93',
+  AUDIO_TX:  '12345678-1234-5678-1234-56789abcdf94',
+  AUDIO_RX:  '12345678-1234-5678-1234-56789abcdf95',
+  BATTERY:   '12345678-1234-5678-1234-56789abcdf96',
+  SENSORS:   '12345678-1234-5678-1234-56789abcdf97',
+  HEARTBEAT: '12345678-1234-5678-1234-56789abcdf98',
 };
 
 // Track active BLE connection
@@ -146,12 +146,11 @@ async function scanForBots() {
       
       // Request device with multiple filter options for reliable discovery.
       // Web Bluetooth matches if ANY filter in the array matches.
-      // Filter 1: Match by name prefix (device name in advertising data)
-      // Filter 2: Match by service UUID (UUID in scan response)
+      // We filter by name prefixes to avoid 128-bit UUID packet size limit issues.
       const device = await navigator.bluetooth.requestDevice({
         filters: [
           { namePrefix: 'AgroMate' },
-          { services: [AGROMATE_BLE_SERVICE_UUID] }
+          { name: 'AgroMate' }
         ],
         optionalServices: [AGROMATE_BLE_SERVICE_UUID],
       });

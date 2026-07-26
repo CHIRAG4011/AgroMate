@@ -155,6 +155,14 @@ class BLEServer:
             logger.error(f"Robot {robot_id} not found")
             return False
 
+        # Ignore direct BLE connections to pseudo-MAC addresses registered by Android app sync
+        if ":" not in robot.mac_address and "-" not in robot.mac_address:
+            logger.info(
+                f"Ignoring direct BLE connection to pseudonymous robot address: {robot.mac_address}. "
+                "This device is managed by the Android app bridge."
+            )
+            return False
+
         if robot.state in (ConnectionState.ACTIVE, ConnectionState.CONNECTING):
             logger.info(
                 f"Robot {robot.name} already in active or connecting state "
@@ -164,7 +172,16 @@ class BLEServer:
 
         robot.transition_to(ConnectionState.CONNECTING)
 
+        was_scanning = False
         try:
+            # Stop background scanning to prevent Windows BLE stack locks
+            if self.discovery and self.discovery.is_scanning:
+                logger.info("Stopping background scanner for connection...")
+                was_scanning = True
+                await self.discovery.stop_continuous_scan()
+                # Give the Windows BLE stack a moment to settle
+                await asyncio.sleep(0.5)
+
             target = robot._ble_device if robot._ble_device else robot.mac_address
             client = BleakClient(
                 target,
@@ -191,6 +208,8 @@ class BLEServer:
                     logger.info(
                         f"✅ Connected to {robot.name} ({robot.mac_address})"
                     )
+                    # Automatically trigger a weather sync to update the robot's dashboard
+                    asyncio.create_task(self._auto_sync_weather(robot.robot_id))
                     return True
                 except Exception as e:
                     logger.error(f"Failed to subscribe to notifications for {robot.name}: {e}")
@@ -214,6 +233,11 @@ class BLEServer:
                     self.connection_manager._reconnect(robot)
                 )
             return False
+
+        finally:
+            if was_scanning:
+                logger.info("Restarting background scanner...")
+                await self.discovery.start_continuous_scan()
 
     async def disconnect_robot(self, robot_id: str):
         """Disconnect a specific robot."""
@@ -268,12 +292,38 @@ class BLEServer:
         msg = build_status_update(screen_mode)
         await self.connection_manager.send_message(robot_id, msg)
 
+    async def send_weather_update(self, robot_id: str, temperature: float, humidity: int, forecast: str):
+        """Send weather data to the robot's dashboard."""
+        from .protocol import build_weather_update
+        msg = build_weather_update(temperature, humidity, forecast)
+        await self.connection_manager.send_message(robot_id, msg)
+
+    async def send_disease_notify(self, robot_id: str):
+        """Notify the robot that a disease was detected (increments counter)."""
+        from .protocol import build_disease_notify
+        msg = build_disease_notify()
+        await self.connection_manager.send_message(robot_id, msg)
+
+    async def send_stats_sync(self, robot_id: str, total_scans: int, diseases_found: int):
+        """Send database scan statistics to the robot."""
+        from .protocol import build_stats_sync
+        msg = build_stats_sync(total_scans, diseases_found)
+        await self.connection_manager.send_message(robot_id, msg)
+
     async def _send_chunked(
         self, robot_id: str, data: bytes, data_type: MessageType
     ):
         """Send large data via chunked transfer protocol."""
-        chunk_size = MAX_PAYLOAD_SIZE - 8  # Reserve space for chunk header
-        total_chunks = (len(data) + chunk_size - 1) // chunk_size
+        if not data:
+            total_chunks = 0
+            chunk_size = 0
+        else:
+            # Limit chunk size to 480 bytes so the 522-byte frame does not get truncated on Windows.
+            # Align with the ESP32's dynamic chunk size division logic.
+            max_chunk_size = 480
+            total_chunks = (len(data) + max_chunk_size - 1) // max_chunk_size
+            chunk_size = (len(data) + total_chunks - 1) // total_chunks
+
         transfer_id = hash(data) & 0xFFFFFFFF
         checksum = zlib.crc32(data) & 0xFFFFFFFF
 
@@ -290,11 +340,14 @@ class BLEServer:
             # Prepend chunk index to payload
             payload = struct.pack("<IH", transfer_id, i) + chunk
             msg = BLEMessage(msg_type=data_type, payload=payload)
-            await self.connection_manager.send_message(robot_id, msg)
+            
+            # Use Write-Without-Response (response=False) for high-speed audio data chunks
+            # Keep control/handshake frames (start/end) with response=True for guaranteed delivery
+            use_response = (data_type != MessageType.SPEECH_AUDIO)
+            await self.connection_manager.send_message(robot_id, msg, response=use_response)
 
-            # Small delay between chunks to avoid BLE congestion
-            if i % 4 == 3:
-                await asyncio.sleep(0.02)
+            # Small delay to pace the transmission and avoid overflow in ESP32 ring buffer
+            await asyncio.sleep(0.008)
 
         # Send CHUNK_END
         end_msg = build_chunk_end(transfer_id, checksum)
@@ -543,3 +596,30 @@ class BLEServer:
                 for rid, transfers in self._active_transfers.items()
             },
         }
+
+    async def _auto_sync_weather(self, robot_id: str):
+        """Automatically fetch and push current weather and stats to robot upon connection."""
+        try:
+            # 1. Sync Weather
+            from ..services.weather import WeatherService
+            weather_svc = WeatherService()
+            # Default coordinates for sync (can be updated by user)
+            weather_data = await weather_svc.get_current_weather(28.6139, 77.2090)
+            if weather_data:
+                temp = weather_data.get("temperature", 25.0)
+                humidity = weather_data.get("humidity", 60)
+                forecast = weather_data.get("description", "Clear").title()
+                await self.send_weather_update(robot_id, temp, humidity, forecast)
+                logger.info(f"⛅ Auto-synced weather on connection for robot: {robot_id}")
+            
+            # 2. Sync Stats from DB (30 days to match dashboard)
+            from ..database.crud import get_session, get_analytics_summary
+            async with await get_session() as session:
+                summary = await get_analytics_summary(session, days=30)
+                if summary:
+                    total_scans = summary.get("total_scans", 0)
+                    total_diagnoses = summary.get("total_diagnoses", 0)
+                    await self.send_stats_sync(robot_id, total_scans, total_diagnoses)
+                    logger.info(f"📊 Auto-synced stats on connection for robot: {robot_id} (Scans={total_scans}, Diseases={total_diagnoses})")
+        except Exception as e:
+            logger.error(f"Failed to auto-sync weather and stats: {e}")

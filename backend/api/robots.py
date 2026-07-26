@@ -40,14 +40,52 @@ async def trigger_scan(robot_id: str):
 
 
 @router.post("/{robot_id}/speak")
-async def make_robot_speak(robot_id: str, text: str = "Hello from AgroMate"):
-    """Send text for the robot to speak."""
+async def make_robot_speak(robot_id: str, text: str = "Hello from AgroMate", language: str = "en"):
+    """Send text and synthesized speech audio for the robot to speak."""
     from ..main import ble_server
     from ..ble.protocol import FaceExpression
-    if ble_server:
-        await ble_server.send_ai_response(robot_id, text, FaceExpression.TALKING)
-        return {"status": "success", "message": "Speech sent"}
-    return {"status": "error", "detail": "BLE server not running"}
+    from ..voice.synthesizer import VoiceSynthesizer
+    if not ble_server:
+        return {"status": "error", "detail": "BLE server not running"}
+        
+    # 1. Send text response
+    await ble_server.send_ai_response(robot_id, text, FaceExpression.TALKING)
+    
+    # 2. Synthesize and send audio data
+    try:
+        synthesizer = VoiceSynthesizer()
+        await synthesizer.initialize()
+        speech = await synthesizer.synthesize(text, language=language, compress_for_robot=True)
+        if speech:
+            await ble_server.send_speech_audio(robot_id, speech.audio_data)
+            return {"status": "success", "message": "Speech text and audio sent"}
+    except Exception as e:
+        logger.error(f"Speech synthesis for robot speak endpoint failed: {e}")
+        return {"status": "success", "message": "Speech text sent, but audio synthesis failed"}
+        
+    return {"status": "success", "message": "Speech text sent"}
+
+
+@router.post("/{robot_id}/sync-weather")
+async def sync_weather(robot_id: str, lat: float = 28.6139, lon: float = 77.2090):
+    """Fetch current weather and push to robot."""
+    from ..main import ble_server
+    from ..services.weather import WeatherService
+    if not ble_server:
+        return {"status": "error", "detail": "BLE server not running"}
+    
+    weather_svc = WeatherService()
+    weather_data = await weather_svc.get_current_weather(lat, lon)
+    
+    if weather_data:
+        temp = weather_data.get("temp", 0.0)
+        humidity = weather_data.get("humidity", 0)
+        forecast = weather_data.get("description", "Unknown").title()
+        
+        await ble_server.send_weather_update(robot_id, temp, humidity, forecast)
+        return {"status": "success", "message": "Weather synced to robot"}
+        
+    return {"status": "error", "detail": "Failed to fetch weather data"}
 
 
 from pydantic import BaseModel
@@ -81,6 +119,16 @@ async def sync_robot(payload: RobotSyncRequest):
             robot.scans_today = payload.scans_today
             return {"status": "success", "robot": robot.to_dict()}
     return {"status": "error", "detail": "BLE server not running"}
+
+@router.post("/{robot_id}/screen-mode")
+async def set_robot_screen_mode(robot_id: str, mode: int):
+    """Set screen mode of the robot (0=FACE, 1=DASHBOARD)."""
+    from ..main import ble_server
+    if ble_server:
+        await ble_server.set_screen_mode(robot_id, mode)
+        return {"status": "success", "message": f"Screen mode set to {mode}"}
+    return {"status": "error", "detail": "BLE server not running"}
+
 
 @router.post("/{robot_id}/config")
 async def update_robot_config(robot_id: str, config: dict):

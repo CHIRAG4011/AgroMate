@@ -35,6 +35,7 @@ async def get_disease_stats(days: int = 30):
 async def get_weather(lat: float = 23.0, lon: float = 72.6, city: str = None):
     """Get weather data with agricultural advisory."""
     from ..services.weather import WeatherService
+    from ..main import ble_server
 
     service = WeatherService()
     weather = await service.get_current_weather(lat, lon)
@@ -43,6 +44,18 @@ async def get_weather(lat: float = 23.0, lon: float = 72.6, city: str = None):
 
     if weather and city:
         weather["location"] = city
+
+    # Auto-sync weather changes to active robots to keep the screen in sync with the web UI
+    if weather and ble_server:
+        temp = weather.get("temperature", 25.0)
+        humidity = weather.get("humidity", 60)
+        forecast_text = weather.get("description", "Clear").title()
+        for robot in ble_server.connection_manager.active_robots:
+            try:
+                await ble_server.send_weather_update(robot.robot_id, temp, humidity, forecast_text)
+                logger.info(f"⛅ Auto-synced active dashboard weather to robot: {robot.name} (temp={temp}, hum={humidity})")
+            except Exception as e:
+                logger.error(f"Failed to auto-sync weather to active robot {robot.name}: {e}")
 
     return {
         "status": "success",

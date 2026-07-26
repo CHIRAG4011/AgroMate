@@ -22,7 +22,8 @@ public:
         Green = 0x008000,
         Red = 0xFF0000,
         Cyan = 0x00FFFF,
-        Orange = 0xFFA500
+        Orange = 0xFFA500,
+        Yellow = 0xFFFF00
     } HTMLColorCode;
 };
 

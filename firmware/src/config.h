@@ -61,14 +61,18 @@
 #define CAM_PIN_HREF 11  // Horizontal reference
 #define CAM_PIN_PCLK 13  // Pixel clock
 
-// ── Audio I2S (Time-Multiplexed — INMP441 + MAX98357A share I2S0) ──
-// Both mic and speaker share BCLK and WS pins on I2S_NUM_0.
-// The driver switches between RX mode (recording) and TX mode (playback).
+// ── Audio I2S (Dedicated pins for Mic and Speaker) ──
 #define AUDIO_I2S_PORT I2S_NUM_1
-#define AUDIO_I2S_BCLK 2   // Bit clock
-#define AUDIO_I2S_WS 1     // Word select / LRCLK
-#define AUDIO_I2S_SD_IN 46 // INMP441 serial data out → ESP32 data in
-#define AUDIO_I2S_SD_OUT 3 // ESP32 data out → MAX98357A DIN
+
+// INMP441 Microphone (I2S RX)
+#define MIC_I2S_BCLK 2      // Microphone Bit Clock
+#define MIC_I2S_WS 1        // Microphone Word Select / LRCLK
+#define AUDIO_I2S_SD_IN 46  // INMP441 serial data out → ESP32 data in
+
+// MAX98357A Amplifier (I2S TX)
+#define SPK_I2S_BCLK 2      // Speaker Bit Clock (shared pin)
+#define SPK_I2S_WS 1        // Speaker Word Select / LRCLK (shared pin)
+#define AUDIO_I2S_SD_OUT 3  // ESP32 data out → MAX98357A DIN
 #define AUDIO_SAMPLE_RATE 16000
 #define AUDIO_BUFFER_SIZE 1024
 
@@ -91,16 +95,16 @@
 #define CHARGING_DET_PIN -1
 
 // ── BLE Configuration ──
-#define BLE_DEVICE_NAME "AgroMate-Robot"
-#define BLE_SERVICE_UUID "12345678-1234-5678-1234-56789abcde01"
-#define BLE_CHAR_CMD_TX "12345678-1234-5678-1234-56789abcdf01"
-#define BLE_CHAR_CMD_RX "12345678-1234-5678-1234-56789abcdf02"
-#define BLE_CHAR_IMG_TX "12345678-1234-5678-1234-56789abcdf03"
-#define BLE_CHAR_AUDIO_TX "12345678-1234-5678-1234-56789abcdf04"
-#define BLE_CHAR_AUDIO_RX "12345678-1234-5678-1234-56789abcdf05"
-#define BLE_CHAR_BATTERY "12345678-1234-5678-1234-56789abcdf06"
-#define BLE_CHAR_SENSORS "12345678-1234-5678-1234-56789abcdf07"
-#define BLE_CHAR_HEARTBEAT "12345678-1234-5678-1234-56789abcdf08"
+#define BLE_DEVICE_NAME "AgroMate"
+#define BLE_SERVICE_UUID "12345678-1234-5678-1234-56789abcde88"
+#define BLE_CHAR_CMD_TX "12345678-1234-5678-1234-56789abcdf81"
+#define BLE_CHAR_CMD_RX "12345678-1234-5678-1234-56789abcdf82"
+#define BLE_CHAR_IMG_TX "12345678-1234-5678-1234-56789abcdf83"
+#define BLE_CHAR_AUDIO_TX "12345678-1234-5678-1234-56789abcdf84"
+#define BLE_CHAR_AUDIO_RX "12345678-1234-5678-1234-56789abcdf85"
+#define BLE_CHAR_BATTERY "12345678-1234-5678-1234-56789abcdf86"
+#define BLE_CHAR_SENSORS "12345678-1234-5678-1234-56789abcdf87"
+#define BLE_CHAR_HEARTBEAT "12345678-1234-5678-1234-56789abcdf88"
 #define BLE_MTU_SIZE 512
 
 // ── Timing ──

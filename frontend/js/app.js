@@ -45,6 +45,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   
   // Start global voice control
   initGlobalVoiceCommander();
+  
+  // Connect to live scan WebSockets
+  initLiveScanSocket();
 });
 
 
@@ -188,7 +191,7 @@ class TTSPlayer {
     const label = document.getElementById('ttsPlayerLabel');
     if (label) label.textContent = 'Generating speech...';
     
-    const engine = localStorage.getItem('agromate-voice-engine') || 'edge-tts';
+    const engine = localStorage.getItem('agromate-voice-engine') || 'gemini';
     const gender = localStorage.getItem('agromate-voice-gender') || 'female';
 
     try {
@@ -224,7 +227,7 @@ class TTSPlayer {
     const label = document.getElementById('ttsPlayerLabel');
     if (label) label.textContent = 'Analyzing report sections...';
 
-    const engine = localStorage.getItem('agromate-voice-engine') || 'edge-tts';
+    const engine = localStorage.getItem('agromate-voice-engine') || 'gemini';
     const gender = localStorage.getItem('agromate-voice-gender') || 'female';
 
     try {
@@ -690,8 +693,12 @@ function formatMessage(text) {
   // Line breaks
   html = html.replace(/\n/g, '<br>');
   
-  // Custom headers conversion (V2 Detailed Response)
+  // Headers conversion (V2 Detailed Response)
+  html = html.replace(/### (.*?)(<br>|$)/g, '<h5 style="margin-top:12px;margin-bottom:6px;color:var(--text-secondary);font-size:0.9rem;">$1</h5>');
   html = html.replace(/## (.*?)(<br>|$)/g, '<h4 style="margin-top:16px;margin-bottom:8px;color:var(--accent-secondary);">$1</h4>');
+  
+  // Numbered lists (1. 2. 3.)
+  html = html.replace(/(\d+)\.\s+(.*?)(<br>|$)/g, '<div style="display:flex;gap:6px;margin:2px 0;"><span style="color:var(--accent-primary);font-weight:600;min-width:18px;">$1.</span><span>$2</span></div>');
   
   // Bullet points
   html = html.replace(/^- (.*?)(<br>|$)/gm, '• $1$2');
@@ -817,17 +824,99 @@ function initGlobalVoiceCommander() {
     const cmdWeather = ['weather', 'मौसम', 'હવામાન', 'موسم'];
     const cmdRobots = ['robot', 'रोबोट', 'રોબોટ', 'روبوٽ', 'روبوٹ'];
     const cmdHistory = ['history', 'इतिहास', 'ઇતિહાસ', 'تاريخ', 'تاریخ'];
-    const cmdAnalytics = ['analytics', 'विश्लेषण', 'એનાલિટિક્સ'];
-    const cmdSettings = ['settings', 'सेटिंग्स', 'સેટિંગ્સ', 'سيٽنگون', 'ترتیبات'];
+    const cmdAnalytics = ['analytics', 'विश्लेषण', 'એનાલิตિક્સ'];
+    const cmdSettings = ['settings', 'सेटिंग्स', 'સેટિંગ્સ', 'سيٽિંગون', 'ترتیبات'];
+    
+    // Robot Action commands
+    const cmdRobotScan = ['scan now', 'take photo', 'start scan', 'स्कैन चालू', 'फोटो खींचो', 'સ્કેન શરૂ', 'ફોટો લો', 'સ્કેન કરો'];
+    const cmdTestVoice = ['test voice', 'voice test', 'आवाज टेस्ट', 'ટેસ્ટ વોઈસ', 'परीक्षण'];
+    const cmdPatrol = ['patrol', 'गश्त', 'પેટ્રોલ', 'ગશ્ત'];
+    const cmdFace = ['face', 'show face', 'close dashboard', 'eye animation', 'show eye', 'चेहरा', 'आँखें', 'ચહેરો', 'આંખ'];
 
     const matches = (list) => list.some(word => transcript.includes(word));
 
-    if (matches(cmdScan)) {
+    // Show visual feedback of what was heard
+    showToast(`🎙️ Voice heard: "${transcript}"`, 'info');
+
+    // Handle interactive robot actions via voice first
+    if (matches(cmdRobotScan) || matches(cmdScan)) {
+      showToast('Fetching active robots for voice scan...', 'info');
       navigateTo('scan');
-      ttsPlayer.play(i18n.t('scan_plant') || "Opening scan camera", currentLanguage);
-    } else if (matches(cmdDashboard)) {
+      api.get('/robots/').then(res => {
+        if (res && res.robots && res.robots.length > 0) {
+          const connectedRobot = res.robots.find(r => r.connected || r.state === 'active');
+          if (connectedRobot) {
+            showToast(`Triggering camera scan on ${connectedRobot.name}...`, 'info');
+            api.post(`/robots/${connectedRobot.robot_id}/scan`).then(scanRes => {
+              if (scanRes && scanRes.status === 'success') {
+                showToast('Scan command sent successfully!', 'success');
+                const msg = currentLanguage === 'hi' ? "स्कैनिंग शुरू कर रही हूँ।" : (currentLanguage === 'gu' ? "સ્કેનીંગ શરૂ કરી રહ્યા છીએ." : "Starting scan now.");
+                ttsPlayer.play(msg, currentLanguage);
+              } else {
+                showToast('Failed to send scan command', 'error');
+              }
+            });
+          } else {
+            showToast('No active connected robots found to scan!', 'error');
+          }
+        } else {
+          showToast('No robots registered in backend!', 'error');
+        }
+      }).catch(() => {
+        showToast('Failed to trigger robot scan', 'error');
+      });
+      return;
+    } else if (matches(cmdTestVoice)) {
+      showToast('Fetching active robots for voice test...', 'info');
+      api.get('/robots/').then(res => {
+        if (res && res.robots && res.robots.length > 0) {
+          const connectedRobot = res.robots.find(r => r.connected || r.state === 'active');
+          if (connectedRobot) {
+            const text = currentLanguage === 'hi' ? "यह एग्रोमेट आवाज प्रणाली का एक परीक्षण संदेश है। सब कुछ ठीक से काम कर रहा है।" : (currentLanguage === 'gu' ? "આ એગ્રોમેટ અવાજ સિસ્ટમનો ટેસ્ટ સંદેશ છે. બધું બરાબર કામ કરી રહ્યું છે." : "This is a test of the AgroMate voice system. Everything is working correctly.");
+            api.post(`/robots/${connectedRobot.robot_id}/speak?text=${encodeURIComponent(text)}&language=${currentLanguage}`).then(() => {
+              showToast("Sent voice test to robot", "success");
+            });
+          } else {
+            showToast('No active connected robots found!', 'error');
+          }
+        }
+      });
+      return;
+    } else if (matches(cmdPatrol)) {
+      showToast('Sent "PATROL" command to AgroMate robot', 'success');
+      const msg = currentLanguage === 'hi' ? "गश्त शुरू कर रही हूँ।" : (currentLanguage === 'gu' ? "પેટ્રોલ શરૂ કરી રહ્યા છીએ." : "Starting patrol.");
+      ttsPlayer.play(msg, currentLanguage);
+      return;
+    } else if (matches(cmdFace)) {
+      const msg = currentLanguage === 'hi' ? "चेहरा दिखा रही हूँ।" : (currentLanguage === 'gu' ? "ચહેરો બતાવી રહી છું." : "Showing eye animation.");
+      ttsPlayer.play(msg, currentLanguage);
+      api.get('/robots/').then(res => {
+        if (res && res.robots && res.robots.length > 0) {
+          const connectedRobot = res.robots.find(r => r.connected || r.state === 'active');
+          if (connectedRobot) {
+            api.post(`/robots/${connectedRobot.robot_id}/screen-mode?mode=0`)
+              .then(() => showToast("Switched robot display to face screen", "success"))
+              .catch(err => console.error("Failed to switch robot screen to face:", err));
+          }
+        }
+      });
+      return;
+    }
+
+    // Handle navigation commands
+    if (matches(cmdDashboard)) {
       navigateTo('dashboard');
       ttsPlayer.play("Opening dashboard", currentLanguage);
+      api.get('/robots/').then(res => {
+        if (res && res.robots && res.robots.length > 0) {
+          const connectedRobot = res.robots.find(r => r.connected || r.state === 'active');
+          if (connectedRobot) {
+            api.post(`/robots/${connectedRobot.robot_id}/screen-mode?mode=1`)
+              .then(() => showToast("Switched robot display to dashboard screen", "success"))
+              .catch(err => console.error("Failed to switch robot screen to dashboard:", err));
+          }
+        }
+      });
     } else if (matches(cmdChat)) {
       navigateTo('chat');
       ttsPlayer.play(i18n.t('welcome') || "Opening chat assistant", currentLanguage);
@@ -883,3 +972,70 @@ i18n.setLanguage = async function(langCode) {
   await originalSetLanguage.call(i18n, langCode);
   initGlobalVoiceCommander();
 };
+
+function initLiveScanSocket() {
+  // Connect to ws/robot/all to listen for global scan_complete events
+  wsManager.connect('ws/robot/all', (message) => {
+    console.log('[WS] Received global message:', message);
+    if (message.type === 'scan_complete') {
+      showToast(`Scan complete: ${message.plant_name} (${message.is_healthy ? 'Healthy' : 'Diseased'})`, 'success');
+      
+      // Update scan page if currently active
+      if (currentPage === 'scan') {
+        scanResult = {
+          plant_name: message.plant_name,
+          scientific_name: message.scientific_name,
+          confidence: message.confidence / 100.0,
+          is_healthy: message.is_healthy,
+          disease_name: message.issue,
+          treatment: message.treatment || '',
+          organic_treatment: message.organic_treatment || ''
+        };
+        // Set mock scanSelectedFile to trigger preview rendering
+        scanSelectedFile = {
+          name: 'live-scan.jpg',
+          type: 'image/jpeg',
+          mockUrl: message.image_path
+        };
+        
+        // Re-render the scan page
+        const mainContent = document.getElementById('mainContent');
+        if (mainContent) {
+          renderScan(mainContent);
+          // Trigger scan line laser animation
+          const laser = document.getElementById('scanLaserLine');
+          if (laser) {
+            laser.style.display = 'block';
+            setTimeout(() => {
+              laser.style.display = 'none';
+            }, 2500);
+          }
+        }
+      }
+      
+      // Update dashboard if currently active
+      if (currentPage === 'dashboard') {
+        loadDashboardStats();
+        loadRecentActivity();
+        
+        // Update the live telemetry feed with the scan event
+        const telFeed = document.getElementById('telemetryFeed');
+        if (telFeed) {
+          const time = new Date().toLocaleTimeString();
+          telFeed.innerHTML += `<div style="margin-bottom:2px; color:var(--accent-primary);">[${time}] Scan Completed: ${message.plant_name} • ${message.issue}</div>`;
+          telFeed.scrollTop = telFeed.scrollHeight;
+        }
+
+        // Show last scan preview on dashboard
+        const previewContainer = document.getElementById('telemetryScanPreview');
+        const previewImg = document.getElementById('telemetryScanImg');
+        const previewLabel = document.getElementById('telemetryScanLabel');
+        if (previewContainer && previewImg && previewLabel) {
+          previewImg.src = message.image_path;
+          previewLabel.innerHTML = `<strong>${message.plant_name}</strong> • ${message.issue} (Conf: ${message.confidence.toFixed(1)}%)`;
+          previewContainer.style.display = 'block';
+        }
+      }
+    }
+  });
+}

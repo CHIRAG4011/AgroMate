@@ -12,23 +12,32 @@ static CmdWriteCallback* cmdWriteCbInstance = nullptr;
 class ServerCallbacks : public NimBLEServerCallbacks {
 public:
     bool* connectedFlag;
+    uint16_t* mtuField;
     
     void onConnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo) override {
         *connectedFlag = true;
-        Serial.printf("BLE Connected! Addr: %s\n", connInfo.getAddress().toString().c_str());
-        // Request connection parameters compatible with Web Bluetooth
-        // Min=24 (30ms), Max=48 (60ms), Latency=0, Timeout=400 (4s)
-        // Note: 7.5ms (6,6) is too aggressive — many browsers reject it
-        pServer->updateConnParams(connInfo.getConnHandle(), 24, 48, 0, 400);
+        if (mtuField) {
+            *mtuField = connInfo.getMTU();
+        }
+        Serial.printf("BLE Connected! Addr: %s, MTU: %u\n", connInfo.getAddress().toString().c_str(), connInfo.getMTU());
+        // Request connection parameters compatible with Web Bluetooth and large data transfers
+        // Min=24 (30ms), Max=48 (60ms), Latency=0, Timeout=1000 (10s)
+        pServer->updateConnParams(connInfo.getConnHandle(), 24, 48, 0, 1000);
     }
     
     void onDisconnect(NimBLEServer* pServer, NimBLEConnInfo& connInfo, int reason) override {
         *connectedFlag = false;
+        if (mtuField) {
+            *mtuField = 23;
+        }
         Serial.printf("BLE Disconnected (reason=%d). Restarting advertising...\n", reason);
         NimBLEDevice::startAdvertising();
     }
     
     void onMTUChange(uint16_t MTU, NimBLEConnInfo& connInfo) override {
+        if (mtuField) {
+            *mtuField = MTU;
+        }
         Serial.printf("MTU updated: %u\n", MTU);
     }
 };
@@ -60,6 +69,7 @@ void AgroMateBLE::begin(const char* deviceName) {
     
     _server = NimBLEDevice::createServer();
     serverCbs.connectedFlag = &_connected;
+    serverCbs.mtuField = &_mtu;
     _server->setCallbacks(&serverCbs);
     
     // ── Command Service ──
@@ -114,22 +124,31 @@ void AgroMateBLE::begin(const char* deviceName) {
     NimBLEAdvertising* pAdvertising = NimBLEDevice::getAdvertising();
     pAdvertising->clearData();
     
-    // Create primary advertisement packet containing Flags, Name, and Service UUID.
-    // Shortened device name to "AgroMate" (8 bytes) so everything fits within the 31-byte BLE limit.
+    // Primary advertisement packet: Flags and 128-bit Service UUID
     NimBLEAdvertisementData advData;
     advData.setFlags(0x06);                   // General Discoverable, BR/EDR Not Supported (3 bytes)
-    advData.setName("AgroMate");              // Device name (10 bytes with header)
     advData.addServiceUUID(BLE_SERVICE_UUID); // 128-bit Service UUID (18 bytes with header)
     pAdvertising->setAdvertisementData(advData);
     
-    pAdvertising->enableScanResponse(false);  // No scan response required since it all fits
+    // Scan response packet: Local Name
+    NimBLEAdvertisementData scanResponseData;
+    scanResponseData.setName(deviceName);     // Device name in scan response
+    pAdvertising->setScanResponseData(scanResponseData);
+    
+    pAdvertising->enableScanResponse(true);   // Enable scan response for name discovery
     pAdvertising->start();
     
-    Serial.println("BLE advertising as 'AgroMate'");
+    Serial.printf("BLE advertising as '%s'\n", deviceName);
 }
 
 void AgroMateBLE::update() {
-    // NimBLE handles events internally
+    if (!_txActive) return;
+    
+    unsigned long now = millis();
+    if (now - _txLastPacketTime < _txPacketDelayMs) return;
+    _txLastPacketTime = now;
+    
+    _sendNextCooperativeChunk();
 }
 
 bool AgroMateBLE::isConnected() {
@@ -168,11 +187,11 @@ void AgroMateBLE::sendSensorData(uint8_t batteryPct, uint16_t batteryMv, bool ch
 }
 
 void AgroMateBLE::sendImage(uint8_t* data, size_t length) {
-    _sendChunked(_imgChar, data, length, 0x01); // 0x01 = IMAGE_CHUNK data type
+    _startCooperativeSend(_imgChar, data, length, 0x01); // 0x01 = IMAGE_CHUNK data type
 }
 
 void AgroMateBLE::sendAudio(uint8_t* data, size_t length) {
-    _sendChunked(_audioTxChar, data, length, 0x02); // 0x02 = AUDIO_CHUNK data type
+    _startCooperativeSend(_audioTxChar, data, length, 0x02); // 0x02 = AUDIO_CHUNK data type
 }
 
 void AgroMateBLE::sendDebugMessage(const char* text) {
@@ -201,80 +220,125 @@ void AgroMateBLE::_sendMessage(NimBLECharacteristic* characteristic, MessageType
     size_t encodedSize = encodeMessage(msg, frameBuf, frameSize);
     if (encodedSize > 0) {
         characteristic->setValue(frameBuf, encodedSize);
-        characteristic->notify();
+        
+        // Retry loop to handle NimBLE congestion and prevent packet drops
+        int retries = 0;
+        while (!characteristic->notify()) {
+            if (!isConnected()) break;
+            delay(1);
+            retries++;
+            if (retries > 100) {
+                Serial.println("[BLE] Notification notify failed (timeout)");
+                break;
+            }
+        }
     }
 
     free(frameBuf);
 }
 
-void AgroMateBLE::_sendChunked(NimBLECharacteristic* characteristic, uint8_t* data, size_t length, uint8_t dataType) {
+void AgroMateBLE::_startCooperativeSend(NimBLECharacteristic* characteristic, uint8_t* data, size_t length, uint8_t dataType) {
     if (!isConnected() || !characteristic) return;
-    
-    uint16_t peerMtu = _server->getPeerMTU(_server->getPeerInfo(0).getConnHandle()) - 3;
-    if (peerMtu < 30) peerMtu = 30;
-    
-    // Reserve space for message framing (12 bytes) and chunk payload header (6 bytes)
-    size_t chunkSize = peerMtu - 18;
-    if (chunkSize > 494) chunkSize = 494; // Cap at MAX_PAYLOAD_SIZE - 18
-    
-    size_t totalChunks = (length + chunkSize - 1) / chunkSize;
-    uint32_t transferId = millis();
-    uint32_t checksum = calculateCRC32(data, length);
-    
-    Serial.printf("Sending %u bytes in %u chunks (MTU=%u, chunkSize=%u)\n", length, totalChunks, peerMtu, chunkSize);
-    
-    // 1. Send CHUNK_START
-    uint8_t startPayload[13];
-    memcpy(startPayload, &transferId, 4);
-    memcpy(startPayload + 4, &length, 4);
-    memcpy(startPayload + 8, &totalChunks, 4);
-    startPayload[12] = dataType;
-    _sendMessage(characteristic, MessageType::CHUNK_START, startPayload, 13);
-    delay(20);
-    
-    // 2. Send Chunks
-    MessageType chunkType = (dataType == 0x01) ? MessageType::IMAGE_CHUNK : MessageType::AUDIO_CHUNK;
-    uint8_t* chunkPayload = (uint8_t*)malloc(chunkSize + 6);
-    if (!chunkPayload) {
-        Serial.println("Chunked send aborted: Out of memory!");
+    if (_txActive) {
+        Serial.println("[BLE] Cooperative TX already active, ignoring new request");
         return;
     }
-
-    memcpy(chunkPayload, &transferId, 4);
     
-    for (size_t i = 0; i < totalChunks; i++) {
-        if (!isConnected()) {
-            Serial.println("[BLE] Disconnected during chunked send! Aborting.");
-            break;
+    if (dataType == 0x01) {
+        // Direct pointer reference to avoid duplicating camera frame buffer in heap memory
+        _txData = data;
+        _isTxDataAllocated = false;
+    } else {
+        _txData = (uint8_t*)malloc(length);
+        if (!_txData) {
+            Serial.println("[BLE] Failed to allocate transmission buffer");
+            return;
         }
-        
-        size_t offset = i * chunkSize;
-        size_t thisChunkSize = min(chunkSize, length - offset);
-        
-        uint16_t chunkIndex = i;
-        memcpy(chunkPayload + 4, &chunkIndex, 2);
-        memcpy(chunkPayload + 6, data + offset, thisChunkSize);
-        
-        _sendMessage(characteristic, chunkType, chunkPayload, thisChunkSize + 6);
-        
-        // Paced sending to prevent Windows BLE stack buffer overflow and connection drops
-        if (i % 4 == 3) {
-            delay(30);
-        } else {
-            delay(15);
-        }
+        memcpy(_txData, data, length);
+        _isTxDataAllocated = true;
+    }
+    _txLen = length;
+    _txChar = characteristic;
+    _txDataType = dataType;
+    
+    // We base chunk size on current MTU, accounting for framing overhead (12 bytes),
+    // chunk header (6 bytes), and ATT notification packet overhead (3 bytes) with some headroom.
+    if (_mtu >= 28) {
+        _txChunkSize = min((size_t)(_mtu - 28), (size_t)MAX_PAYLOAD_SIZE - 8);
+    } else {
+        _txChunkSize = 5;
+    }
+    _txTotalChunks = (length + _txChunkSize - 1) / _txChunkSize;
+    _txTransferId = millis();
+    _txChecksum = calculateCRC32(_txData, _txLen);
+    _txCurrentChunk = 0;
+    _txLastPacketTime = 0;
+    _txActive = true;
+    
+    Serial.printf("[BLE] Started cooperative send: %u bytes, %u chunks\n", _txLen, _txTotalChunks);
+}
+
+void AgroMateBLE::_sendNextCooperativeChunk() {
+    if (!isConnected()) {
+        _abortCooperativeTx();
+        return;
     }
     
-    free(chunkPayload);
-    delay(20);
+    if (_txCurrentChunk == 0) {
+        // Send CHUNK_START (first tick)
+        uint8_t startPayload[13];
+        memcpy(startPayload, &_txTransferId, 4);
+        memcpy(startPayload + 4, &_txLen, 4);
+        memcpy(startPayload + 8, &_txTotalChunks, 4);
+        startPayload[12] = _txDataType;
+        _sendMessage(_txChar, MessageType::CHUNK_START, startPayload, 13);
+        _txLastPacketTime = millis();
+        _txCurrentChunk = 1; // move to first data chunk on next tick
+        return;
+    }
     
-    // 3. Send CHUNK_END
+    if (_txCurrentChunk <= _txTotalChunks) {
+        // Send data chunk
+        size_t chunkIdx = _txCurrentChunk - 1;
+        size_t offset = chunkIdx * _txChunkSize;
+        size_t thisChunkSize = min(_txChunkSize, _txLen - offset);
+        
+        MessageType chunkType = (_txDataType == 0x01) ? MessageType::IMAGE_CHUNK : MessageType::AUDIO_CHUNK;
+        uint8_t* chunkPayload = (uint8_t*)malloc(_txChunkSize + 6);
+        if (!chunkPayload) {
+            Serial.println("[BLE] Out of memory allocating chunk payload!");
+            _abortCooperativeTx();
+            return;
+        }
+        
+        memcpy(chunkPayload, &_txTransferId, 4);
+        uint16_t idx16 = chunkIdx;
+        memcpy(chunkPayload + 4, &idx16, 2);
+        memcpy(chunkPayload + 6, _txData + offset, thisChunkSize);
+        
+        _sendMessage(_txChar, chunkType, chunkPayload, thisChunkSize + 6);
+        free(chunkPayload);
+        
+        _txCurrentChunk++;
+        return;
+    }
+    
+    // Send CHUNK_END
     uint8_t endPayload[8];
-    memcpy(endPayload, &transferId, 4);
-    memcpy(endPayload + 4, &checksum, 4);
-    _sendMessage(characteristic, MessageType::CHUNK_END, endPayload, 8);
+    memcpy(endPayload, &_txTransferId, 4);
+    memcpy(endPayload + 4, &_txChecksum, 4);
+    _sendMessage(_txChar, MessageType::CHUNK_END, endPayload, 8);
     
-    Serial.printf("Chunked send complete: %u bytes\n", length);
+    Serial.printf("[BLE] Cooperative transfer complete: %u bytes\n", _txLen);
+    _abortCooperativeTx();
+}
+
+void AgroMateBLE::_abortCooperativeTx() {
+    if (_txData && _isTxDataAllocated) {
+        free(_txData);
+    }
+    _txData = nullptr;
+    _txActive = false;
 }
 
 void AgroMateBLE::handleWriteEvent(const uint8_t* data, size_t length) {
@@ -350,18 +414,16 @@ void AgroMateBLE::_handleIncomingMessage(const BLEMessage& msg) {
 
         case MessageType::SPEECH_AUDIO: {
             // This is a chunk message for the speech audio transfer
-            if (msg.length >= 6) {
+            if (msg.length >= 6 && _rxTransferActive) {
                 uint32_t transferId;
-                uint16_t chunkIndex;
                 memcpy(&transferId, msg.payload, 4);
-                memcpy(&chunkIndex, msg.payload + 4, 2);
                 
-                if (_rxTransferActive && _rxTransferId == transferId) {
-                    size_t chunkDataLen = msg.length - 6;
-                    size_t offset = chunkIndex * 504; // Sender uses chunk_size = MAX_PAYLOAD_SIZE - 8 = 504
+                if (_rxTransferId == transferId) {
+                    size_t chunkDataLen = msg.length - 6; // subtract 4-byte transferId + 2-byte chunkIndex
                     
-                    if (offset + chunkDataLen <= _rxTotalSize) {
-                        memcpy(_rxBuffer + offset, msg.payload + 6, chunkDataLen);
+                    if (_rxBytesReceived + chunkDataLen <= _rxTotalSize) {
+                        memcpy(_rxBuffer + _rxBytesReceived, msg.payload + 6, chunkDataLen);
+                        _rxBytesReceived += chunkDataLen;
                         _rxChunksReceived++;
                     }
                 }
@@ -397,5 +459,6 @@ void AgroMateBLE::_resetRxReassembly() {
     _rxTotalSize = 0;
     _rxTotalChunks = 0;
     _rxChunksReceived = 0;
+    _rxBytesReceived = 0;
     _rxDataType = 0;
 }

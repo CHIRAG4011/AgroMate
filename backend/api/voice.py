@@ -26,14 +26,14 @@ class TTSRequest(BaseModel):
     language: str = "en"
     gender: str = "female"
     voice: Optional[str] = None
-    engine: Optional[str] = "edge-tts"
+    engine: Optional[str] = "gemini"
 
 
 class SectionedTTSRequest(BaseModel):
     text: str
     language: str = "en"
     gender: str = "female"
-    engine: Optional[str] = "edge-tts"
+    engine: Optional[str] = "gemini"
 
 
 @router.post("/stt")
@@ -140,7 +140,7 @@ async def text_to_speech(request: TTSRequest):
             voice=request.voice,
             gender=request.gender,
             compress_for_robot=False,
-            engine=request.engine or "edge-tts",
+            engine=request.engine or "gemini",
         )
 
         if not result or not result.audio_data:
@@ -199,7 +199,7 @@ async def text_to_speech_sections(request: SectionedTTSRequest):
             text=request.text,
             language=request.language,
             gender=request.gender,
-            engine=request.engine or "edge-tts",
+            engine=request.engine or "gemini",
         )
 
         if not result:

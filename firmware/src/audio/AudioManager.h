@@ -28,6 +28,7 @@ public:
     bool isRecording() { return _recording; }
     uint8_t* getRecordedData(size_t* outSize);
     void playBuffer(uint8_t* data, size_t length);
+    void playTestTone(uint32_t durationMs = 3000);
     bool isPlaying() { return _playing; }
     float getPlaybackLevel();
 

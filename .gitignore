@@ -80,3 +80,13 @@ models/
 secrets/
 *.pem
 *.key
+
+# ---------- Uploads & DB ----------
+frontend/uploads/
+*.db
+backend/agromate.db
+
+# ---------- Backup files ----------
+*.backup
+*.final_ov7670_qvga
+firmware/backup/

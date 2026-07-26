@@ -262,12 +262,17 @@ class ChatbotEngine:
 
                 if response.status_code == 200:
                     data = response.json()
-                    text = data["candidates"][0]["content"]["parts"][0]["text"]
-                    return ChatResponse(
-                        text=text,
-                        language=language,
-                        confidence=0.9,
-                    )
+                    candidates = data.get("candidates", [])
+                    if candidates:
+                        content = candidates[0].get("content", {})
+                        parts = content.get("parts", [])
+                        if parts:
+                            text = parts[0].get("text", "")
+                            return ChatResponse(
+                                text=text,
+                                language=language,
+                                confidence=0.9,
+                            )
                 else:
                     logger.error(f"Gemini API error: {response.status_code} - {response.text}")
 

@@ -1,17 +1,20 @@
 """AgroMate Plants API — Plant identification and information with high-accuracy Vision fallback."""
 
+import asyncio
 import logging
 import time
 import uuid
 from pathlib import Path
-from fastapi import APIRouter, UploadFile, File, HTTPException, Query
-from ..auth.middleware import get_optional_user
+from fastapi import APIRouter, BackgroundTasks, UploadFile, File, HTTPException, Query
 from ..ai.vision_analyser import VisionAnalyser
 from ..chatbot.engine import ChatbotEngine
 from ..database.crud import get_session, create_scan, create_diagnosis
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# Maximum seconds to wait for Vision API before giving up and falling back to local models
+_VISION_TIMEOUT_SECONDS = 60
 
 
 async def _save_scan_to_db(image_data: bytes, scan_type: str, result_dict: dict):
@@ -20,7 +23,7 @@ async def _save_scan_to_db(image_data: bytes, scan_type: str, result_dict: dict)
         # Save image file to disk
         uploads_dir = Path("frontend/uploads")
         uploads_dir.mkdir(parents=True, exist_ok=True)
-        filename = f"scan_{uuid.uuid4().hex}.jpg"
+        filename = f"scan_{int(time.time() * 1000)}.jpg"
         file_path = uploads_dir / filename
         with open(file_path, "wb") as f:
             f.write(image_data)
@@ -148,7 +151,7 @@ async def _generate_ai_summary(result_dict: dict, scan_type: str, language: str)
 
 
 @router.post("/identify")
-async def identify_plant(image: UploadFile = File(...), language: str = Query("en")):
+async def identify_plant(background_tasks: BackgroundTasks, image: UploadFile = File(...), language: str = Query("en")):
     """Identify a plant from an uploaded image."""
     if not image.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File must be an image")
@@ -156,9 +159,16 @@ async def identify_plant(image: UploadFile = File(...), language: str = Query("e
     image_data = await image.read()
     start_time = time.time()
     
-    # 1. Try Premium Vision Analyser first
+    # 1. Try Premium Vision Analyser first (with hard timeout)
     vision = VisionAnalyser()
-    result_dict = await vision.analyze_image(image_data, "identify")
+    try:
+        result_dict = await asyncio.wait_for(
+            vision.analyze_image(image_data, "identify"),
+            timeout=_VISION_TIMEOUT_SECONDS
+        )
+    except asyncio.TimeoutError:
+        logger.warning("Vision API timed out for identify — falling back to local model")
+        result_dict = None
     
     if result_dict:
         result_dict["model_used"] = "gemini_vision"
@@ -174,7 +184,7 @@ async def identify_plant(image: UploadFile = File(...), language: str = Query("e
         else:
             raise HTTPException(status_code=422, detail="Could not identify plant")
 
-    # Fetch and append Trefle API dataset details if scientific name is present
+    # Fetch Trefle API details in background (non-blocking)
     sc_name = result_dict.get("scientific_name")
     if sc_name:
         try:
@@ -194,24 +204,38 @@ async def identify_plant(image: UploadFile = File(...), language: str = Query("e
         except Exception as ex:
             logger.error(f"Failed to query Trefle API for details: {ex}")
 
-    # Generate AI summary and append to result
-    result_dict["ai_summary"] = await _generate_ai_summary(result_dict, "identify", language)
+    # Generate AI summary inline but with a short timeout so it doesn't block
+    try:
+        result_dict["ai_summary"] = await asyncio.wait_for(
+            _generate_ai_summary(result_dict, "identify", language),
+            timeout=20.0
+        )
+    except asyncio.TimeoutError:
+        logger.warning("AI summary timed out for identify scan — returning without summary")
+        result_dict["ai_summary"] = ""
     
-    # Persist scan to database
-    await _save_scan_to_db(image_data, "identify", result_dict)
+    # Persist scan to database in background (non-blocking)
+    background_tasks.add_task(_save_scan_to_db, image_data, "identify", result_dict)
     
     return {"status": "success", "result": result_dict}
 
 
 @router.post("/diagnose")
-async def diagnose_plant(image: UploadFile = File(...), plant_name: str = None, language: str = Query("en")):
+async def diagnose_plant(background_tasks: BackgroundTasks, image: UploadFile = File(...), plant_name: str = None, language: str = Query("en")):
     """Diagnose disease in a plant image."""
     image_data = await image.read()
     start_time = time.time()
 
-    # 1. Try Premium Vision Analyser first
+    # 1. Try Premium Vision Analyser first (with hard timeout)
     vision = VisionAnalyser()
-    result_dict = await vision.analyze_image(image_data, "diagnose", plant_name)
+    try:
+        result_dict = await asyncio.wait_for(
+            vision.analyze_image(image_data, "diagnose", plant_name),
+            timeout=_VISION_TIMEOUT_SECONDS
+        )
+    except asyncio.TimeoutError:
+        logger.warning("Vision API timed out for diagnose — falling back to local model")
+        result_dict = None
 
     if result_dict:
         result_dict["model_used"] = "gemini_vision"
@@ -227,24 +251,38 @@ async def diagnose_plant(image: UploadFile = File(...), plant_name: str = None, 
         else:
             raise HTTPException(status_code=422, detail="Could not diagnose plant")
 
-    # Generate AI summary and append to result
-    result_dict["ai_summary"] = await _generate_ai_summary(result_dict, "diagnose", language)
+    # Generate AI summary with timeout
+    try:
+        result_dict["ai_summary"] = await asyncio.wait_for(
+            _generate_ai_summary(result_dict, "diagnose", language),
+            timeout=20.0
+        )
+    except asyncio.TimeoutError:
+        logger.warning("AI summary timed out for diagnose scan")
+        result_dict["ai_summary"] = ""
     
-    # Persist scan to database
-    await _save_scan_to_db(image_data, "diagnose", result_dict)
+    # Persist scan to database in background (non-blocking)
+    background_tasks.add_task(_save_scan_to_db, image_data, "diagnose", result_dict)
     
     return {"status": "success", "result": result_dict}
 
 
 @router.post("/pests")
-async def detect_pests(image: UploadFile = File(...), language: str = Query("en")):
+async def detect_pests(background_tasks: BackgroundTasks, image: UploadFile = File(...), language: str = Query("en")):
     """Detect pests in an image."""
     image_data = await image.read()
     start_time = time.time()
 
-    # 1. Try Premium Vision Analyser first
+    # 1. Try Premium Vision Analyser first (with hard timeout)
     vision = VisionAnalyser()
-    result_dict = await vision.analyze_image(image_data, "pests")
+    try:
+        result_dict = await asyncio.wait_for(
+            vision.analyze_image(image_data, "pests"),
+            timeout=_VISION_TIMEOUT_SECONDS
+        )
+    except asyncio.TimeoutError:
+        logger.warning("Vision API timed out for pests — falling back to local model")
+        result_dict = None
 
     if result_dict:
         result_dict["model_used"] = "gemini_vision"
@@ -260,24 +298,38 @@ async def detect_pests(image: UploadFile = File(...), language: str = Query("en"
         else:
             raise HTTPException(status_code=422, detail="Could not analyze image")
 
-    # Generate AI summary and append to result
-    result_dict["ai_summary"] = await _generate_ai_summary(result_dict, "pests", language)
+    # Generate AI summary with timeout
+    try:
+        result_dict["ai_summary"] = await asyncio.wait_for(
+            _generate_ai_summary(result_dict, "pests", language),
+            timeout=20.0
+        )
+    except asyncio.TimeoutError:
+        logger.warning("AI summary timed out for pests scan")
+        result_dict["ai_summary"] = ""
     
-    # Persist scan to database
-    await _save_scan_to_db(image_data, "pests", result_dict)
+    # Persist scan to database in background (non-blocking)
+    background_tasks.add_task(_save_scan_to_db, image_data, "pests", result_dict)
     
     return {"status": "success", "result": result_dict}
 
 
 @router.post("/nutrients")
-async def analyze_nutrients(image: UploadFile = File(...), language: str = Query("en")):
+async def analyze_nutrients(background_tasks: BackgroundTasks, image: UploadFile = File(...), language: str = Query("en")):
     """Analyze nutrient deficiency from a leaf image."""
     image_data = await image.read()
     start_time = time.time()
 
-    # 1. Try Premium Vision Analyser first
+    # 1. Try Premium Vision Analyser first (with hard timeout)
     vision = VisionAnalyser()
-    result_dict = await vision.analyze_image(image_data, "nutrients")
+    try:
+        result_dict = await asyncio.wait_for(
+            vision.analyze_image(image_data, "nutrients"),
+            timeout=_VISION_TIMEOUT_SECONDS
+        )
+    except asyncio.TimeoutError:
+        logger.warning("Vision API timed out for nutrients — falling back to local model")
+        result_dict = None
 
     if result_dict:
         result_dict["model_used"] = "gemini_vision"
@@ -292,11 +344,18 @@ async def analyze_nutrients(image: UploadFile = File(...), language: str = Query
         else:
             raise HTTPException(status_code=422, detail="Could not analyze nutrients")
 
-    # Generate AI summary and append to result
-    result_dict["ai_summary"] = await _generate_ai_summary(result_dict, "nutrients", language)
+    # Generate AI summary with timeout
+    try:
+        result_dict["ai_summary"] = await asyncio.wait_for(
+            _generate_ai_summary(result_dict, "nutrients", language),
+            timeout=20.0
+        )
+    except asyncio.TimeoutError:
+        logger.warning("AI summary timed out for nutrients scan")
+        result_dict["ai_summary"] = ""
     
-    # Persist scan to database
-    await _save_scan_to_db(image_data, "nutrients", result_dict)
+    # Persist scan to database in background (non-blocking)
+    background_tasks.add_task(_save_scan_to_db, image_data, "nutrients", result_dict)
     
     return {"status": "success", "result": result_dict}
 

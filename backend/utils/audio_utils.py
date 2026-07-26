@@ -256,40 +256,16 @@ def compress_for_ble(
     sample_width: int = SAMPLE_WIDTH,
 ) -> bytes:
     """
-    Compress audio for BLE transfer using µ-law encoding.
-
-    Reduces 16-bit audio to 8-bit while preserving dynamic range.
+    Bypass µ-law compression and return raw PCM data for direct ESP32 I2S compatibility.
     """
-    if sample_width != 2:
-        return pcm_data
-
-    samples = np.frombuffer(pcm_data, dtype=np.int16).astype(np.float32)
-
-    # µ-law compression
-    mu = 255.0
-    max_val = 32768.0
-    normalized = samples / max_val
-    compressed = np.sign(normalized) * np.log1p(mu * np.abs(normalized)) / np.log1p(mu)
-
-    # Scale to 8-bit
-    encoded = ((compressed + 1.0) * 127.5).clip(0, 255).astype(np.uint8)
-    return encoded.tobytes()
+    return pcm_data
 
 
 def decompress_from_ble(compressed_data: bytes) -> bytes:
     """
-    Decompress µ-law encoded audio back to 16-bit PCM.
+    Bypass decompression and return raw PCM data from ESP32 I2S microphone.
     """
-    encoded = np.frombuffer(compressed_data, dtype=np.uint8).astype(np.float32)
-
-    # Reverse µ-law
-    mu = 255.0
-    normalized = encoded / 127.5 - 1.0
-    expanded = np.sign(normalized) * (1.0 / mu) * ((1.0 + mu) ** np.abs(normalized) - 1.0)
-
-    # Scale to 16-bit
-    samples = (expanded * 32768.0).clip(-32768, 32767).astype(np.int16)
-    return samples.tobytes()
+    return compressed_data
 
 
 def validate_audio(data: bytes) -> Tuple[bool, str]:
@@ -309,3 +285,46 @@ def validate_audio(data: bytes) -> Tuple[bool, str]:
         return False, "Audio too short"
 
     return True, "OK"
+
+
+def decode_to_pcm(audio_bytes: bytes, audio_format: str, target_sample_rate: int = SAMPLE_RATE) -> bytes:
+    """
+    Convert compressed audio bytes (MP3, WAV, etc.) to raw 16-bit PCM bytes.
+    Uses soundfile as a robust, native decoder without requiring ffmpeg.
+    """
+    import io
+    import soundfile as sf
+    import numpy as np
+
+    try:
+        # Read the audio file from memory bytes using soundfile
+        data, samplerate = sf.read(io.BytesIO(audio_bytes), dtype='int16')
+        
+        # Convert multi-channel (stereo) to mono by averaging channels
+        if len(data.shape) > 1 and data.shape[1] > 1:
+            data = data.mean(axis=1).astype(np.int16)
+            
+        pcm_bytes = data.tobytes()
+        
+        # Resample if the sample rate is different from the target
+        if samplerate != target_sample_rate:
+            pcm_bytes = resample_audio(pcm_bytes, samplerate, target_sample_rate, sample_width=2)
+            
+        return pcm_bytes
+    except Exception as e:
+        logger.error(f"Failed to decode {audio_format} to PCM using soundfile: {e}. Trying pydub fallback.")
+        
+        # Fallback to pydub if soundfile fails
+        try:
+            from pydub import AudioSegment
+            import imageio_ffmpeg
+            
+            # Configure pydub to use imageio-ffmpeg's static binary
+            AudioSegment.converter = imageio_ffmpeg.get_ffmpeg_exe()
+            
+            audio = AudioSegment.from_file(io.BytesIO(audio_bytes), format=audio_format)
+            audio = audio.set_frame_rate(target_sample_rate).set_channels(1).set_sample_width(2)
+            return audio.raw_data
+        except Exception as pe:
+            logger.error(f"Pydub fallback decode failed: {pe}. Ensure audio system dependencies are met.")
+            return b""

@@ -43,20 +43,20 @@ CHAR_UUID_HEARTBEAT = "0000ag33-0000-1000-8000-00805f9b34fb"
 
 # Use standard-compliant UUIDs for actual BLE operations
 BLE_SERVICE_UUIDS = {
-    "command": "12345678-1234-5678-1234-56789abcde01",
+    "command": "12345678-1234-5678-1234-56789abcde88",
     "data": "12345678-1234-5678-1234-56789abcde02",
     "status": "12345678-1234-5678-1234-56789abcde03",
 }
 
 BLE_CHAR_UUIDS = {
-    "cmd_tx": "12345678-1234-5678-1234-56789abcdf01",
-    "cmd_rx": "12345678-1234-5678-1234-56789abcdf02",
-    "img_tx": "12345678-1234-5678-1234-56789abcdf03",
-    "audio_tx": "12345678-1234-5678-1234-56789abcdf04",
-    "audio_rx": "12345678-1234-5678-1234-56789abcdf05",
-    "battery": "12345678-1234-5678-1234-56789abcdf06",
-    "sensors": "12345678-1234-5678-1234-56789abcdf07",
-    "heartbeat": "12345678-1234-5678-1234-56789abcdf08",
+    "cmd_tx": "12345678-1234-5678-1234-56789abcdf81",
+    "cmd_rx": "12345678-1234-5678-1234-56789abcdf82",
+    "img_tx": "12345678-1234-5678-1234-56789abcdf83",
+    "audio_tx": "12345678-1234-5678-1234-56789abcdf84",
+    "audio_rx": "12345678-1234-5678-1234-56789abcdf85",
+    "battery": "12345678-1234-5678-1234-56789abcdf86",
+    "sensors": "12345678-1234-5678-1234-56789abcdf87",
+    "heartbeat": "12345678-1234-5678-1234-56789abcdf88",
 }
 
 
@@ -302,6 +302,34 @@ def build_capture_request(resolution: int = 1) -> BLEMessage:
 def build_status_update(screen_mode: int) -> BLEMessage:
     """Build a status update message. screen_mode: 0=FACE, 1=DASHBOARD."""
     payload = struct.pack("<B", screen_mode)
+    return BLEMessage(msg_type=MessageType.STATUS_UPDATE, payload=payload)
+
+
+def build_weather_update(temperature: float, humidity: int, forecast: str) -> BLEMessage:
+    """Build a weather sync message (STATUS_UPDATE mode 2).
+    
+    Payload format: mode(1) + temp(4 float) + humidity(1) + forecast(string)
+    """
+    forecast_bytes = forecast[:31].encode("utf-8")
+    payload = struct.pack("<Bf", 2, temperature) + struct.pack("<B", min(humidity, 255)) + forecast_bytes
+    return BLEMessage(msg_type=MessageType.STATUS_UPDATE, payload=payload)
+
+
+def build_disease_notify() -> BLEMessage:
+    """Build a disease detection notification (STATUS_UPDATE mode 3).
+    
+    Tells the robot to increment its disease counter in NVS.
+    """
+    payload = struct.pack("<B", 3)
+    return BLEMessage(msg_type=MessageType.STATUS_UPDATE, payload=payload)
+
+
+def build_stats_sync(total_scans: int, diseases_found: int) -> BLEMessage:
+    """Build a stats sync message (STATUS_UPDATE mode 4).
+    
+    Payload format: mode(1) + total_scans(4 uint32) + diseases_found(4 uint32)
+    """
+    payload = struct.pack("<BII", 4, total_scans, diseases_found)
     return BLEMessage(msg_type=MessageType.STATUS_UPDATE, payload=payload)
 
 

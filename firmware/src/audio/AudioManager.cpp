@@ -14,25 +14,9 @@
 #include "AudioManager.h"
 
 void AudioManager::begin() {
-    // Pre-allocate record buffer (5 seconds at 16kHz 16-bit mono = 160KB)
-    // Try PSRAM first, fall back to smaller DRAM buffer
-    if (psramFound()) {
-        _recordBuffer = (uint8_t*)ps_malloc(AUDIO_SAMPLE_RATE * 2 * 5);
-        Serial.println("[Audio] Record buffer allocated in PSRAM (5s)");
-    }
-    if (!_recordBuffer) {
-        // Fallback: 2 seconds in regular DRAM (64KB)
-        _recordBuffer = (uint8_t*)malloc(AUDIO_SAMPLE_RATE * 2 * 2);
-        if (_recordBuffer) {
-            Serial.println("[Audio] Record buffer allocated in DRAM (2s)");
-        } else {
-            Serial.println("[Audio] WARNING: Record buffer allocation failed!");
-        }
-    }
-
-    // Start in mic mode (ready to record)
+    // Start I2S in mic mode to stabilize shared clocks/buses (fixes camera line corruption)
     _switchToMic();
-    Serial.println("[Audio] Time-multiplexed I2S initialized (INMP441 + MAX98357A)");
+    Serial.println("[Audio] Time-multiplexed I2S clocks stabilized (mic & speaker disabled)");
 }
 
 void AudioManager::_switchToMic() {
@@ -55,8 +39,8 @@ void AudioManager::_switchToMic() {
     micConfig.fixed_mclk = 0;
 
     i2s_pin_config_t micPins = {};
-    micPins.bck_io_num = AUDIO_I2S_BCLK;
-    micPins.ws_io_num = AUDIO_I2S_WS;
+    micPins.bck_io_num = MIC_I2S_BCLK;
+    micPins.ws_io_num = MIC_I2S_WS;
     micPins.data_out_num = I2S_PIN_NO_CHANGE;
     micPins.data_in_num = AUDIO_I2S_SD_IN;
 
@@ -96,8 +80,8 @@ void AudioManager::_switchToSpeaker() {
     spkConfig.fixed_mclk = 0;
 
     i2s_pin_config_t spkPins = {};
-    spkPins.bck_io_num = AUDIO_I2S_BCLK;
-    spkPins.ws_io_num = AUDIO_I2S_WS;
+    spkPins.bck_io_num = SPK_I2S_BCLK;
+    spkPins.ws_io_num = SPK_I2S_WS;
     spkPins.data_out_num = AUDIO_I2S_SD_OUT;
     spkPins.data_in_num = I2S_PIN_NO_CHANGE;
 
@@ -181,52 +165,26 @@ void AudioManager::update() {
 }
 
 void AudioManager::startRecording(uint32_t durationMs) {
-    // Switch to mic mode if needed
-    if (_playing) {
-        _playing = false;
-    }
-    _switchToMic();
-
-    _recordDuration = min(durationMs, (uint32_t)10000);
-    _recordPos = 0;
-    _recordSize = 0;
-    _recordStart = millis();
-    _recording = true;
-    Serial.printf("[Audio] Recording started (%u ms)\n", _recordDuration);
+    // Microphone recording fully removed
 }
 
 void AudioManager::stopRecording() {
     _recording = false;
-    _recordSize = _recordPos;
 }
 
 uint8_t* AudioManager::getRecordedData(size_t* outSize) {
-    *outSize = _recordSize;
-    return _recordBuffer;
+    *outSize = 0;
+    return nullptr;
 }
 
 void AudioManager::playBuffer(uint8_t* data, size_t length) {
-    // Stop any recording in progress
-    if (_recording) {
-        _recording = false;
-    }
-
-    // Switch to speaker mode
-    _switchToSpeaker();
-
-    if (_playBuffer) free(_playBuffer);
-    _playBuffer = (uint8_t*)malloc(length);
-    if (_playBuffer) {
-        memcpy(_playBuffer, data, length);
-        _playSize = length;
-        _playPos = 0;
-        _playing = true;
-        Serial.printf("[Audio] Playing %u bytes\n", length);
-    } else {
-        Serial.println("[Audio] Playback buffer alloc failed!");
-    }
+    // Speaker playback fully removed
 }
 
 float AudioManager::getPlaybackLevel() {
     return _playLevel;
+}
+
+void AudioManager::playTestTone(uint32_t durationMs) {
+    // Speaker verification tone fully removed
 }

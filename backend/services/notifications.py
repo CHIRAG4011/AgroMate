@@ -19,7 +19,7 @@ class NotificationService:
         self, user_id: str, title: str, body: str, data: dict = None
     ) -> bool:
         """Send a push notification to a user."""
-        logger.info(f"Notification → {user_id}: {title}")
+        logger.info(f"Notification -> {user_id}: {title}")
         # Store for WebSocket delivery
         if user_id not in self._subscribers:
             self._subscribers[user_id] = []

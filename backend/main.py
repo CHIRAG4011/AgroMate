@@ -80,46 +80,168 @@ async def lifespan(app: FastAPI):
         await ble_server.stop()
     await close_database()
     logger.info("🌱 Goodbye!")
+    # Trigger uvicorn reload
 
 
 def _setup_ble_pipeline(server: BLEServer, logger):
     """Wire up BLE events to AI processing pipeline."""
 
+    def _clean_for_tft(text: str, max_len: int = 60) -> str:
+        """
+        Sanitize text for TFT display:
+        - Strip markdown bold/italic/headers
+        - Replace newlines with semicolons (field separator inside a field)
+        - Remove pipe chars that would break the pipe-delimited protocol
+        - Remove bullet points and leading symbols
+        - Collapse whitespace
+        - Truncate to max_len
+        """
+        import re
+        if not text:
+            return ""
+        # Strip markdown bold/italic (**text** → text, *text* → text)
+        text = re.sub(r'\*{1,3}(.*?)\*{1,3}', r'\1', text)
+        # Strip markdown headers (## Heading → Heading)
+        text = re.sub(r'^#{1,6}\s*', '', text, flags=re.MULTILINE)
+        # Replace newlines / carriage returns with semicolon separator
+        text = re.sub(r'[\r\n]+', '; ', text)
+        # Remove pipe characters (protocol delimiter — must not appear in fields)
+        text = text.replace('|', '-')
+        # Remove leading bullet/dash/number list markers
+        text = re.sub(r'^[\-•*\d\.]+\s*', '', text, flags=re.MULTILINE)
+        # Remove backticks
+        text = text.replace('`', '')
+        # Collapse multiple spaces/semicolons
+        text = re.sub(r';\s*;+', ';', text)
+        text = re.sub(r'\s{2,}', ' ', text)
+        text = text.strip('; ').strip()
+        # Truncate
+        if len(text) > max_len:
+            text = text[:max_len - 3].rsplit(' ', 1)[0] + '...'
+        return text
+
     async def on_image_received(robot, image_data):
         """Process image received from robot through AI pipeline."""
         logger.info(f"📸 Image received from {robot.name} ({len(image_data)} bytes)")
 
-        from .ai.plant_detector import PlantDetector
-        from .ai.disease_detector import DiseaseDetector
+        import uuid
+        import time
+        from pathlib import Path
+        from .utils.image_utils import convert_raw_to_jpeg
+        from .ai.vision_analyser import VisionAnalyser
         from .chatbot.engine import ChatbotEngine
         from .ble.protocol import FaceExpression
 
         # Set thinking expression
         await server.set_face_expression(robot.robot_id, FaceExpression.THINKING)
 
-        # Identify plant
-        plant_detector = PlantDetector()
-        await plant_detector.initialize()
-        plant_result = await plant_detector.identify(image_data)
+        # 1. Convert raw formats (Grayscale/YUV422) if needed
+        jpeg_data = convert_raw_to_jpeg(image_data)
 
-        # Detect disease
-        disease_detector = DiseaseDetector()
-        await disease_detector.initialize()
-        plant_name = plant_result.plant_name if plant_result else None
-        disease_result = await disease_detector.detect(image_data, plant_name)
+        # 2. Save image to disk under frontend/uploads/
+        db_image_path = f"/uploads/scan_{robot.robot_id}_{int(time.time())}.jpg"
+        try:
+            uploads_dir = Path("frontend/uploads")
+            uploads_dir.mkdir(parents=True, exist_ok=True)
+            filename = f"scan_{int(time.time() * 1000)}.jpg"
+            file_path = uploads_dir / filename
+            with open(file_path, "wb") as f:
+                f.write(jpeg_data)
+            db_image_path = f"/uploads/{filename}"
+            logger.info(f"💾 Saved robot image scan to {file_path}")
+        except Exception as e:
+            logger.error(f"Failed to save scan image to disk: {e}")
 
-        # Build scan context for chatbot
+        # Auto-configure scan using the exact same two-step LLM Vision Pipeline as the manual dashboard uploads
+        analyser = VisionAnalyser()
+        auto_result = await analyser.analyze_image(jpeg_data, "identify")
+        
         scan_context = {}
-        if plant_result:
-            scan_context["plant_name"] = plant_result.plant_name
-            scan_context["scientific_name"] = plant_result.scientific_name
-            scan_context["confidence"] = plant_result.confidence
-        if disease_result:
-            scan_context["disease_name"] = disease_result.disease_name
-            scan_context["is_healthy"] = disease_result.is_healthy
-            scan_context["severity"] = disease_result.severity
-            scan_context["treatment"] = disease_result.treatment
-            scan_context["organic_treatment"] = disease_result.organic_treatment
+        common_name = "Unknown"
+        scientific_name = "N/A"
+        confidence = 0.0
+        issue = "Unknown"
+        is_healthy = True
+        
+        if auto_result:
+            common_name = auto_result.get("plant_name", "Unknown Plant")
+            scientific_name = auto_result.get("scientific_name", "N/A")
+            confidence = auto_result.get("confidence", 0.0) * 100
+            
+            # Step 2: Run Premium Disease Diagnosis using the same mode as the dashboard
+            diagnosis_res = await analyser.analyze_image(jpeg_data, "diagnose", plant_name=common_name)
+            if diagnosis_res:
+                is_healthy = diagnosis_res.get("is_healthy", True)
+                issue = diagnosis_res.get("disease_name", "Healthy")
+                scan_context = {
+                    "scan_type": "disease" if not is_healthy else "identification",
+                    "plant_name": common_name,
+                    "scientific_name": scientific_name,
+                    "is_healthy": is_healthy,
+                    "disease_name": issue,
+                    "severity": diagnosis_res.get("severity", "none"),
+                    "treatment": diagnosis_res.get("treatment", ""),
+                    "organic_treatment": diagnosis_res.get("organic_treatment", ""),
+                }
+            else:
+                is_healthy = True
+                issue = "Healthy"
+                scan_context = {
+                    "scan_type": "identification",
+                    "plant_name": common_name,
+                    "scientific_name": scientific_name,
+                    "is_healthy": True,
+                    "disease_name": "Healthy",
+                }
+        else:
+            logger.warning("Premium identification failed. Falling back to local plant and disease detection models...")
+            try:
+                from .ai.plant_detector import PlantDetector
+                detector = PlantDetector()
+                await detector.initialize()
+                plant_res = await detector.identify(jpeg_data)
+                
+                if plant_res:
+                    common_name = plant_res.plant_name
+                    scientific_name = plant_res.scientific_name
+                    confidence = plant_res.confidence * 100
+                    
+                    # Local disease diagnosis based on identified plant
+                    from .ai.disease_detector import DiseaseDetector
+                    disease_det = DiseaseDetector()
+                    await disease_det.initialize()
+                    disease_res = await disease_det.detect(jpeg_data, common_name)
+                    
+                    if disease_res:
+                        is_healthy = disease_res.is_healthy
+                        issue = disease_res.disease_name
+                        if is_healthy and not issue:
+                            issue = "Healthy"
+                        elif not is_healthy and not issue:
+                            issue = "Unknown Disease"
+                        
+                        scan_context = {
+                            "scan_type": "disease" if not is_healthy else "identification",
+                            "plant_name": common_name,
+                            "scientific_name": scientific_name,
+                            "is_healthy": is_healthy,
+                            "disease_name": issue,
+                            "severity": disease_res.severity or "none",
+                            "treatment": disease_res.treatment or "",
+                            "organic_treatment": disease_res.organic_treatment or "",
+                        }
+                    else:
+                        scan_context = {
+                            "scan_type": "identification",
+                            "plant_name": common_name,
+                            "scientific_name": scientific_name,
+                            "is_healthy": True,
+                            "disease_name": "Healthy",
+                        }
+                else:
+                    logger.warning("Local plant detector could not identify plant.")
+            except Exception as e:
+                logger.error(f"Local fallback classification failed: {e}")
 
         # Use ChatbotEngine to generate the localized two-tier summary response
         chatbot = ChatbotEngine()
@@ -139,44 +261,157 @@ def _setup_ble_pipeline(server: BLEServer, logger):
         )
 
         response_text = chat_response.short_summary or chat_response.text
-        expression = FaceExpression.HAPPY if (disease_result and disease_result.is_healthy) else FaceExpression.WARNING
+        
+        # Format display text as structured pipe-delimited data for the robot's TFT display.
+        # All fields are sanitized: markdown stripped, pipes replaced, newlines → semicolons.
+        # Disease format: D|Plant|Scientific|Confidence%|Disease|Severity|HealthScore|Symptoms|Treatment|Summary
+        # Healthy format: H|Plant|Scientific|Confidence%|HealthScore|Tips
+        
+        # Clean all text fields for TFT
+        tft_plant     = _clean_for_tft(common_name, 24)
+        tft_sci       = _clean_for_tft(scientific_name, 28)
+        tft_conf      = f"{min(confidence, 100.0):.1f}"  # already ×100 from line 135
+        tft_summary   = _clean_for_tft(response_text, 80)
+        
+        if not is_healthy and issue != "Healthy":
+            severity      = scan_context.get("severity", "moderate")
+            treatment     = scan_context.get("treatment", "Monitor plant health")
+            organic       = scan_context.get("organic_treatment", "")
+            disease_name_raw = scan_context.get("disease_name", issue)
+            
+            # Health score from severity
+            severity_scores = {"low": 65, "mild": 65, "moderate": 45, "high": 25, "severe": 10, "none": 85}
+            health_score = severity_scores.get(severity.lower(), 50)
+            
+            # Build symptoms dynamically from disease name (fallback to generic)
+            disease_lower = disease_name_raw.lower()
+            if "blight" in disease_lower:
+                symptoms = "Browning;Leaf spots;Wilting"
+            elif "rust" in disease_lower:
+                symptoms = "Orange pustules;Leaf spots;Yellowing"
+            elif "mold" in disease_lower or "mildew" in disease_lower:
+                symptoms = "White powder;Fuzzy growth;Discoloration"
+            elif "wilt" in disease_lower:
+                symptoms = "Wilting;Yellowing;Stem rot"
+            elif "spot" in disease_lower:
+                symptoms = "Leaf spots;Yellowing;Necrosis"
+            elif "rot" in disease_lower:
+                symptoms = "Soft rot;Discoloration;Odor"
+            elif "deficien" in disease_lower or "chloros" in disease_lower:
+                symptoms = "Yellowing;Pale leaves;Stunted growth"
+            else:
+                symptoms = "Discoloration;Leaf damage;Abnormal growth"
+            
+            # Sanitize treatment fields — combine organic + chemical, keep short
+            tft_disease   = _clean_for_tft(disease_name_raw, 28)
+            tft_severity  = _clean_for_tft(severity, 12)
+            tft_treatment = _clean_for_tft(
+                (organic + "; " + treatment) if organic else treatment, 70
+            )
+            
+            display_text = f"D|{tft_plant}|{tft_sci}|{tft_conf}|{tft_disease}|{tft_severity}|{health_score}|{symptoms}|{tft_treatment}|{tft_summary}"
+        else:
+            health_score = 95
+            tips_src = scan_context.get("organic_treatment", "") or scan_context.get("treatment", "")
+            if tips_src:
+                tft_tips = _clean_for_tft(tips_src, 60)
+            else:
+                tft_tips = "Water regularly;Ensure sunlight;Check soil pH"
+            display_text = f"H|{tft_plant}|{tft_sci}|{tft_conf}|{health_score}|{tft_tips}"
+        
+        expression = FaceExpression.HAPPY if is_healthy else FaceExpression.WARNING
 
-        # Send response back to robot
-        await server.send_ai_response(robot.robot_id, response_text, expression)
+        # Send structured data to the robot display
+        await server.send_ai_response(robot.robot_id, display_text, expression)
+        
+        # Notify robot to increment disease counter if not healthy
+        if not is_healthy:
+            await server.send_disease_notify(robot.robot_id)
 
-        # Generate and send speech (Short Summary only!)
+        # Store scan in database immediately
         try:
-            from .voice.synthesizer import VoiceSynthesizer
-            synthesizer = VoiceSynthesizer()
-            await synthesizer.initialize()
-            speech = await synthesizer.synthesize(response_text, language=lang)
-            if speech:
-                await server.send_speech_audio(robot.robot_id, speech.audio_data)
-        except Exception as e:
-            logger.error(f"Speech synthesis failed: {e}")
-
-        # Store scan in database
-        try:
-            from .database.crud import get_session, create_scan, create_diagnosis
+            from .database.crud import get_session, create_scan, create_diagnosis, get_robot_by_id
             async with await get_session() as session:
-                scan = await create_scan(session, image_path=f"ble://{robot.robot_id}/capture")
-                if disease_result:
+                db_robot = await get_robot_by_id(session, robot.robot_id)
+                db_robot_id = db_robot.id if db_robot else None
+
+                scan = await create_scan(
+                    session=session, 
+                    image_path=db_image_path, 
+                    scan_type="disease" if not is_healthy else "identification", 
+                    user_id=None,
+                    robot_id=db_robot_id
+                )
+                if auto_result or scan_context:
+                    # Resolve values from scan_context or auto_result
+                    disease_name_val = scan_context.get("disease_name") or scan_context.get("issue_detected") or issue
+                    severity_val = scan_context.get("severity") or "none"
+                    treatment_val = scan_context.get("treatment") or ""
+                    organic_val = scan_context.get("organic_treatment") or ""
+
                     await create_diagnosis(
                         session,
                         scan_id=scan.id,
-                        plant_name=plant_result.plant_name if plant_result else None,
-                        disease_name=disease_result.disease_name,
-                        confidence=disease_result.confidence,
-                        severity=disease_result.severity,
-                        treatment=disease_result.treatment,
-                        organic_treatment=disease_result.organic_treatment,
+                        plant_name=common_name,
+                        disease_name=disease_name_val,
+                        confidence=confidence / 100.0,
+                        severity=severity_val,
+                        treatment=treatment_val,
+                        organic_treatment=organic_val,
                     )
+                
+                # Broadcast via websocket to any connected frontends instantly
+                from .api.websocket import ws_manager
+                message = {
+                    "type": "scan_complete",
+                    "image_path": db_image_path,
+                    "plant_name": common_name,
+                    "scientific_name": scientific_name,
+                    "confidence": confidence,
+                    "is_healthy": is_healthy,
+                    "issue": issue,
+                    "treatment": scan_context.get("treatment", ""),
+                    "organic_treatment": scan_context.get("organic_treatment", ""),
+                    "response_text": response_text
+                }
+                await ws_manager.broadcast("robot:all", message)
+                await ws_manager.broadcast(f"robot:{robot.robot_id}", message)
+
+                # Fetch updated 30-day stats from database and sync to the robot's local display
+                from .database.crud import get_analytics_summary
+                summary = await get_analytics_summary(session, days=30)
+                if summary:
+                    total_scans = summary.get("total_scans", 0)
+                    total_diagnoses = summary.get("total_diagnoses", 0)
+                    await server.send_stats_sync(robot.robot_id, total_scans, total_diagnoses)
+                    logger.info(f"📊 Synced post-scan stats to robot: {robot.name} (Scans={total_scans}, Diseases={total_diagnoses})")
         except Exception as e:
-            logger.error(f"Failed to store scan: {e}")
+            logger.error(f"Database save or WebSocket broadcast failed: {e}")
+
+        # Generate and send speech in the background (Non-blocking!)
+        async def speak_in_background():
+            try:
+                from .voice.synthesizer import VoiceSynthesizer
+                synthesizer = VoiceSynthesizer()
+                await synthesizer.initialize()
+                speech = await synthesizer.synthesize(response_text, language=lang, compress_for_robot=True)
+                if speech:
+                    await server.send_speech_audio(robot.robot_id, speech.audio_data)
+            except Exception as se:
+                logger.error(f"Background speech synthesis failed: {se}")
+
+        asyncio.create_task(speak_in_background())
 
     async def on_audio_received(robot, audio_data):
         """Process audio received from robot — speech recognition pipeline."""
         logger.info(f"🎤 Audio received from {robot.name} ({len(audio_data)} bytes)")
+
+        from .utils.audio_utils import decompress_from_ble
+        try:
+            audio_data = decompress_from_ble(audio_data)
+            logger.info(f"🔊 Decompressed robot audio to {len(audio_data)} bytes of 16-bit PCM")
+        except Exception as e:
+            logger.error(f"Failed to decompress robot audio: {e}")
 
         from .voice.recognizer import VoiceRecognizer
         from .voice.synthesizer import VoiceSynthesizer
@@ -206,7 +441,7 @@ def _setup_ble_pipeline(server: BLEServer, logger):
 
         text = recognition.text.lower().strip()
         
-        # Check for screen switching voice commands
+        # Check for screen switching, scan, or test voice commands
         is_dashboard_cmd = any(cmd in text for cmd in [
             "open dashboard", "show dashboard", "go to dashboard", "dashboard",
             "डैशबोर्ड खोलें", "डैशबोर्ड दिखाएं", "ડેશબોર્ડ ખોલો", "ડેશબોર્ડ"
@@ -216,6 +451,18 @@ def _setup_ble_pipeline(server: BLEServer, logger):
             "close dashboard", "show eye", "show face", "back to eye", "eye animation", "face", "exit",
             "डैशबोर्ड बंद करें", "चेहरा दिखाएं", "आंखें दिखाएं", "चेहरा", "आंख",
             "ડેશબોર્ડ બંધ કરો", "આંખ", "ચહેરો"
+        ])
+
+        is_scan_cmd = any(cmd in text for cmd in [
+            "scan now", "scan", "take photo", "capture", "start scan", "scan plant",
+            "स्कैन करें", "फोटो खींचें", "कैमरा चालू करें", "स्कैन",
+            "સ્કેન કરો", "ફોટો લો", "સ્કેન"
+        ])
+
+        is_test_voice_cmd = any(cmd in text for cmd in [
+            "test voice", "send test voice", "test voice message", "voice test", "send voice test",
+            "आवाज का परीक्षण", "टेस्ट वॉइस", "आवाज टेस्ट",
+            "ટેસ્ટ વોઈસ", "અવાજ ટેસ્ટ"
         ])
 
         if is_dashboard_cmd:
@@ -234,7 +481,7 @@ def _setup_ble_pipeline(server: BLEServer, logger):
             try:
                 synthesizer = VoiceSynthesizer()
                 await synthesizer.initialize()
-                speech = await synthesizer.synthesize(confirm_text, language=recognition.language)
+                speech = await synthesizer.synthesize(confirm_text, language=recognition.language, compress_for_robot=True)
                 if speech:
                     await server.send_speech_audio(robot.robot_id, speech.audio_data)
             except Exception as e:
@@ -257,7 +504,52 @@ def _setup_ble_pipeline(server: BLEServer, logger):
             try:
                 synthesizer = VoiceSynthesizer()
                 await synthesizer.initialize()
-                speech = await synthesizer.synthesize(confirm_text, language=recognition.language)
+                speech = await synthesizer.synthesize(confirm_text, language=recognition.language, compress_for_robot=True)
+                if speech:
+                    await server.send_speech_audio(robot.robot_id, speech.audio_data)
+            except Exception as e:
+                logger.error(f"Speech synthesis failed: {e}")
+            return
+
+        elif is_scan_cmd:
+            logger.info("🎙️ Voice command recognized: SCAN NOW")
+            
+            if recognition.language == "hi":
+                confirm_text = "स्कैनिंग शुरू कर रही हूँ।"
+            elif recognition.language == "gu":
+                confirm_text = "સ્કેનીંગ શરૂ કરી રહ્યા છીએ."
+            else:
+                confirm_text = "Starting scan now."
+                
+            await server.send_ai_response(robot.robot_id, confirm_text, FaceExpression.HAPPY)
+            try:
+                synthesizer = VoiceSynthesizer()
+                await synthesizer.initialize()
+                speech = await synthesizer.synthesize(confirm_text, language=recognition.language, compress_for_robot=True)
+                if speech:
+                    await server.send_speech_audio(robot.robot_id, speech.audio_data)
+            except Exception as e:
+                logger.error(f"Speech synthesis failed: {e}")
+            
+            # Trigger scan on the robot
+            await server.request_camera_capture(robot.robot_id)
+            return
+
+        elif is_test_voice_cmd:
+            logger.info("🎙️ Voice command recognized: TEST VOICE")
+            
+            if recognition.language == "hi":
+                test_text = "यह एग्रोमेट आवाज प्रणाली का एक परीक्षण संदेश है। सब कुछ ठीक से काम कर रहा है।"
+            elif recognition.language == "gu":
+                test_text = "આ એગ્રોમેટ અવાજ સિસ્ટમનો ટેસ્ટ સંદેશ છે. બધું બરાબર કામ કરી રહ્યું છે."
+            else:
+                test_text = "This is a test of the AgroMate voice system. Everything is working correctly."
+                
+            await server.send_ai_response(robot.robot_id, test_text, FaceExpression.HAPPY)
+            try:
+                synthesizer = VoiceSynthesizer()
+                await synthesizer.initialize()
+                speech = await synthesizer.synthesize(test_text, language=recognition.language, compress_for_robot=True)
                 if speech:
                     await server.send_speech_audio(robot.robot_id, speech.audio_data)
             except Exception as e:
@@ -288,7 +580,7 @@ def _setup_ble_pipeline(server: BLEServer, logger):
         try:
             synthesizer = VoiceSynthesizer()
             await synthesizer.initialize()
-            speech = await synthesizer.synthesize(response_text, language=recognition.language)
+            speech = await synthesizer.synthesize(response_text, language=recognition.language, compress_for_robot=True)
             if speech:
                 await server.send_speech_audio(robot.robot_id, speech.audio_data)
         except Exception as e:
@@ -328,6 +620,9 @@ app.include_router(ws_router)
 _frontend_dir = Path(__file__).resolve().parent.parent / "frontend"
 if _frontend_dir.is_dir():
     app.mount("/dashboard", StaticFiles(directory=str(_frontend_dir), html=True), name="dashboard")
+    uploads_path = _frontend_dir / "uploads"
+    uploads_path.mkdir(parents=True, exist_ok=True)
+    app.mount("/uploads", StaticFiles(directory=str(uploads_path)), name="uploads")
 
 
 # ── Root Endpoint ──
@@ -369,3 +664,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# Triggered reload to refresh BLE connection state
+

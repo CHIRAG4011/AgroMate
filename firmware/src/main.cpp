@@ -24,7 +24,9 @@
 #include <Arduino.h>
 #include <esp_pm.h>
 #include "esp_log.h"
+#include "esp_mac.h"
 #include "driver/gpio.h"
+#include <Preferences.h>
 
 // A simple vprintf redirect that bypasses the heavy diagnostics hooks to prevent stack overflows
 int simple_vprintf(const char* fmt, va_list args) {
@@ -51,10 +53,14 @@ enum class ScreenMode : uint8_t {
     BOOT = 0,
     FACE = 1,
     DASHBOARD = 2,
-    PREVIEW = 3
+    PREVIEW = 3,
+    RESULT = 4
 };
 
 ScreenMode currentScreen = ScreenMode::BOOT;
+
+String latestAiResult = "";
+bool resultDrawn = false;
 
 // ── Timing ──
 unsigned long lastFrameTime = 0;
@@ -92,20 +98,34 @@ const Expression demoSequence[] = {
 };
 const uint8_t DEMO_SEQ_LEN = sizeof(demoSequence) / sizeof(demoSequence[0]);
 
-// ── Interrupt-driven BOOT button ──
+// ── Boot button polling ──
 #define BTN_PIN 0
-volatile bool buttonPressed = false;
+bool lastButtonState = HIGH;
 unsigned long lastBtnDebounce = 0;
-const unsigned long BTN_DEBOUNCE_MS = 300;
+const unsigned long BTN_DEBOUNCE_MS = 250;
 uint8_t btnPressCount = 0;
-
-void IRAM_ATTR buttonISR() {
-    buttonPressed = true;
-}
 
 // ── Dashboard data ──
 unsigned long bootTime = 0;
 bool dashboardDrawn = false; // Tracks whether static dashboard elements have been drawn
+
+// ── NVS Persistent Scan Counter ──
+Preferences nvsPrefs;
+uint32_t totalScanCount = 0;
+uint32_t diseasesFound = 0;
+
+// ── Weather data (synced from backend via BLE) ──
+float weatherTemp = 0.0f;
+int weatherHumidity = 0;
+char weatherForecast[32] = "No Data";
+bool weatherSynced = false;
+
+// ── Hardware init status (set during boot) ──
+bool hwCameraOk = false;
+bool hwMicOk = false;
+bool hwSpeakerOk = false;
+bool hwLedsOk = false;
+bool hwBleOk = false;
 
 // ── Color palette (matching FaceRenderer) ──
 #define UI_BG        0x0000  // Black
@@ -119,6 +139,10 @@ bool dashboardDrawn = false; // Tracks whether static dashboard elements have be
 #define UI_DARK_CYAN 0x0410
 #define UI_WHITE     0xFFFF
 #define UI_DARK_BLUE 0x000F
+#define UI_DARK_GREEN 0x03E0
+#define UI_DARK_RED   0x7800
+#define UI_LIGHT_GRAY 0xC618
+#define UI_AMBER      0xFE60
 
 // ── Forward declarations ──
 void drawHomeScreen();
@@ -126,6 +150,8 @@ void drawBootScreen(float progress, const char* status);
 void drawDashboardStatic();
 void drawDashboardDynamic();
 void drawStatusBar();
+void drawDiseaseResultScreen();
+void drawHealthyResultScreen();
 void handleButton();
 void updateDemo();
 void handleBLECommand(uint8_t* data, size_t length);
@@ -166,128 +192,144 @@ void yuv422_to_rgb565_fast(const uint8_t* yuv, uint16_t* rgb, int width, int hei
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  Live Camera Scanning Preview & Capture
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  Run Scan Preview — Simplified Scanning Screen
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 void runScanPreview() {
     TFT_eSPI* tft = display.getTFT();
     tft->fillScreen(UI_BG);
     
-    // Draw scanning border box (centered around 426x320 scaled preview)
-    int borderX = 23;
-    int borderY = 0;
-    tft->drawRect(borderX, borderY, 434, 320, UI_CYAN);
-    tft->drawRect(borderX + 1, borderY + 1, 432, 318, UI_CYAN);
+    // Draw scanning UI
+    tft->drawRoundRect(20, 40, SCREEN_WIDTH - 40, SCREEN_HEIGHT - 80, 8, UI_CYAN);
+    tft->fillRect(21, 41, SCREEN_WIDTH - 42, 30, UI_DARK_BLUE);
+    tft->setTextDatum(MC_DATUM);
+    tft->setTextSize(2);
+    tft->setTextColor(UI_WHITE, UI_DARK_BLUE);
+    tft->drawString("AGROMATE VISION SCAN", SCREEN_WIDTH / 2, 56);
     
-    // Stack-allocated line buffer for one row of scaled RGB565 pixels (426 pixels = 852 bytes)
-    uint16_t rgbLine[426];
-    
-    unsigned long startTime = millis();
-    int scanLineY = 0;
-    bool scanLineDown = true;
+    tft->setTextColor(UI_CYAN, UI_BG);
+    tft->drawString("WARMING UP CAMERA...", SCREEN_WIDTH / 2, 120);
+    tft->setTextSize(1);
+    tft->setTextColor(UI_WHITE, UI_BG);
+    tft->drawString("Hold the camera steady near the plant", SCREEN_WIDTH / 2, 160);
     
     face.setExpression(Expression::SCANNING);
     leds.setPattern(LEDPattern::PULSE, CRGB::Green, 80);
     
-    // Run live preview for 10 seconds (10000 ms) as requested by user
-    while (millis() - startTime < 10000) {
+    // Reset diagnostic counters
+    camera.warmupSuccessCount = 0;
+    camera.warmupFailCount = 0;
+    
+    // Warm up camera for 2 seconds — flush old frames, let auto-exposure adjust
+    unsigned long startTime = millis();
+    while (millis() - startTime < 2000) {
         camera_fb_t* fb = camera.captureRaw();
-        
         if (fb) {
-            leds.setPattern(LEDPattern::SOLID, CRGB::Green);
-            
-            int w = fb->width;
-            
-            // Perform integer-based 1.33x scale conversion line-by-line:
-            //   - Width: 320px -> 426px (srcX = x * 3 / 4)
-            //   - Height: 240px -> 320px (srcY = y * 3 / 4)
-            for (int y = 0; y < 320; y++) {
-                int srcY = (y * 3) / 4;
-                
-                if (fb->format == PIXFORMAT_GRAYSCALE) {
-                    const uint8_t* grayPtr = fb->buf + (srcY * w);
-                    for (int x = 0; x < 426; x++) {
-                        int srcX = (x * 3) / 4;
-                        uint8_t g = grayPtr[srcX];
-                        rgbLine[x] = ((g >> 3) << 11) | ((g >> 2) << 5) | (g >> 3);
-                    }
-                    tft->pushImage(27, y, 426, 1, rgbLine);
-                } else if (fb->format == PIXFORMAT_YUV422) {
-                    const uint8_t* yuvPtr = fb->buf + (srcY * w * 2);
-                    uint16_t tempLine[320];
-                    yuv422_to_rgb565_fast(yuvPtr, tempLine, w, 1);
-                    for (int x = 0; x < 426; x++) {
-                        int srcX = (x * 3) / 4;
-                        rgbLine[x] = tempLine[srcX];
-                    }
-                    tft->pushImage(27, y, 426, 1, rgbLine);
-                }
-            }
-            
-            // Draw a green laser line scanning overlay spanning the scaled preview
-            tft->drawFastHLine(27, scanLineY, 426, UI_GREEN);
-            if (scanLineY > 0) {
-                tft->drawFastHLine(27, scanLineY - 1, 426, UI_GREEN);
-            }
-            
-            // Update scan line movement
-            if (scanLineDown) {
-                scanLineY += 4;
-                if (scanLineY >= 318) scanLineDown = false;
-            } else {
-                scanLineY -= 4;
-                if (scanLineY <= 2) scanLineDown = true;
-            }
+            camera.warmupSuccessCount++;
+            camera.releaseFrame();
         } else {
-            leds.setPattern(LEDPattern::SOLID, CRGB::Red);
+            camera.warmupFailCount++;
         }
-        
-        camera.releaseFrame();
-        delay(15); // Frame limiting for responsive loop
+        delay(50);
         ble.update();
         leds.update();
-
-        // Send heartbeat in background to prevent laptop BLE timeout
-        static unsigned long lastHeartbeatInPreview = 0;
-        unsigned long now = millis();
-        if (now - lastHeartbeatInPreview >= HEARTBEAT_INTERVAL_MS) {
-            lastHeartbeatInPreview = now;
-            if (ble.isConnected()) {
-                ble.sendHeartbeat();
-                ble.sendSensorData(85, 4100, false);
-            }
-        }
     }
     
-    // Capture final high-quality photo to send
+    // Show warm-up results on screen
+    tft->fillRect(21, 100, SCREEN_WIDTH - 42, 120, UI_BG);
+    tft->setTextSize(1);
+    tft->setTextColor(UI_WHITE, UI_BG);
+    char warmBuf[64];
+    snprintf(warmBuf, sizeof(warmBuf), "Warmup: %d OK / %d FAIL  Heap: %u",
+             camera.warmupSuccessCount, camera.warmupFailCount, ESP.getFreeHeap());
+    tft->drawString(warmBuf, SCREEN_WIDTH / 2, 100);
+    
+    tft->setTextSize(2);
+    tft->setTextColor(UI_CYAN, UI_BG);
+    tft->drawString("CAPTURING...", SCREEN_WIDTH / 2, 130);
+    
+    // Capture final photo
     size_t finalJpgSize = 0;
     uint8_t* finalJpg = camera.capture(&finalJpgSize);
+    
     if (finalJpg && finalJpgSize > 0) {
-        Serial.printf("[Preview] Capture successful (%u bytes). Sending over BLE...\n", finalJpgSize);
-        ble.sendDebugMessage("Capture successful. Sending image chunks...");
-        
-        // Show analyzer indicator on screen inside the preview box
-        tft->fillRect(27, 0, 426, 320, UI_BG);
+        // SUCCESS — show analyzing screen and send
+        tft->fillScreen(UI_BG);
+        tft->drawRoundRect(20, 40, SCREEN_WIDTH - 40, SCREEN_HEIGHT - 80, 8, UI_CYAN);
+        tft->fillRect(21, 41, SCREEN_WIDTH - 42, 30, UI_DARK_BLUE);
         tft->setTextDatum(MC_DATUM);
         tft->setTextSize(2);
+        tft->setTextColor(UI_WHITE, UI_DARK_BLUE);
+        tft->drawString("ANALYZING SCAN...", SCREEN_WIDTH / 2, 56);
         tft->setTextColor(UI_CYAN, UI_BG);
-        tft->drawString("ANALYZING PLANT...", SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
+        tft->drawString("SENDING TO AI SERVER...", SCREEN_WIDTH / 2, 130);
+        
+        totalScanCount++;
+        nvsPrefs.putUInt("scans", totalScanCount);
         
         ble.sendImage(finalJpg, finalJpgSize);
+        
         face.setExpression(Expression::THINKING);
-        leds.setPattern(LEDPattern::BLINK, CRGB::Cyan, 120);
+        leds.setPattern(LEDPattern::PULSE, CRGB::Cyan, 120);
+        
+        // Switch back to face mode to prevent infinite scan loop
+        currentScreen = ScreenMode::FACE;
     } else {
-        Serial.println("[Preview] Camera capture failed!");
-        String errMsg = "Camera capture failed! Free heap: " + String(ESP.getFreeHeap()) + " init=" + String(camera.isAvailable());
-        ble.sendDebugMessage(errMsg.c_str());
+        // FAILURE — show detailed diagnostic info on screen
+        tft->fillScreen(UI_BG);
+        tft->drawRoundRect(20, 20, SCREEN_WIDTH - 40, SCREEN_HEIGHT - 40, 8, UI_RED);
+        tft->fillRect(21, 21, SCREEN_WIDTH - 42, 30, 0x8000); // Dark red header
+        tft->setTextDatum(MC_DATUM);
+        tft->setTextSize(2);
+        tft->setTextColor(UI_WHITE, 0x8000);
+        tft->drawString("CAPTURE FAILED", SCREEN_WIDTH / 2, 36);
+        
+        tft->setTextSize(1);
+        tft->setTextColor(UI_WHITE, UI_BG);
+        
+        // Line 1: Error code
+        char errBuf[64];
+        const char* errName = "Unknown";
+        if (camera.lastError == -1) errName = "NOT_INITIALIZED";
+        else if (camera.lastError == 1) errName = "FB_GET_TIMEOUT";
+        else if (camera.lastError == 2) errName = "JPG_CONVERT_FAIL";
+        snprintf(errBuf, sizeof(errBuf), "Error: %d (%s)", camera.lastError, errName);
+        tft->drawString(errBuf, SCREEN_WIDTH / 2, 80);
+        
+        // Line 2: Camera state
+        snprintf(errBuf, sizeof(errBuf), "Camera init: %s  Raw: %u bytes",
+                 camera.isAvailable() ? "YES" : "NO", camera.lastRawSize);
+        tft->drawString(errBuf, SCREEN_WIDTH / 2, 110);
+        
+        // Line 3: Warm-up results
+        snprintf(errBuf, sizeof(errBuf), "Warmup frames: %d OK / %d FAIL",
+                 camera.warmupSuccessCount, camera.warmupFailCount);
+        tft->drawString(errBuf, SCREEN_WIDTH / 2, 140);
+        
+        // Line 4: Free heap
+        snprintf(errBuf, sizeof(errBuf), "Free heap: %u bytes", ESP.getFreeHeap());
+        tft->drawString(errBuf, SCREEN_WIDTH / 2, 170);
+        
+        // Line 5: Largest free block
+        snprintf(errBuf, sizeof(errBuf), "Largest block: %u bytes", ESP.getMaxAllocHeap());
+        tft->drawString(errBuf, SCREEN_WIDTH / 2, 200);
+        
+        tft->setTextSize(2);
+        tft->setTextColor(UI_CYAN, UI_BG);
+        tft->drawString("Press BOOT to dismiss", SCREEN_WIDTH / 2, 260);
+        
         face.setExpression(Expression::ERROR);
         leds.setPattern(LEDPattern::SOLID, CRGB::Red);
+        
+        // Wait for user to read the diagnostics (or 15 seconds)
+        unsigned long errorTime = millis();
+        while (millis() - errorTime < 15000) {
+            if (digitalRead(BTN_PIN) == LOW) break;
+            delay(50);
+        }
+        currentScreen = ScreenMode::FACE;
     }
     
-    camera.releaseFrame();
-    delay(1000);
-    
-    // Restore Face Screen mode
-    currentScreen = ScreenMode::FACE;
-    drawHomeScreen();
-    leds.setPattern(LEDPattern::SOLID, CRGB::Blue);
+    tft->fillScreen(UI_BG);
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -311,13 +353,21 @@ void handleBLECommand(uint8_t* data, size_t length) {
             break;
         }
         case MessageType::AI_RESPONSE: {
-            if (payloadLen > 0) {
+            if (payloadLen > 1) {
+                uint8_t exprVal = payload[0];
+                Expression expr = static_cast<Expression>(exprVal);
+                face.setExpression(expr);
+                
                 String responseText = "";
-                for (size_t i = 0; i < payloadLen; i++) {
+                for (size_t i = 1; i < payloadLen; i++) {
                     responseText += (char)payload[i];
                 }
-                display.showAIResponse(responseText);
-                Serial.printf("[BLE] Displaying response: %s\n", responseText.c_str());
+                
+                latestAiResult = responseText;
+                currentScreen = ScreenMode::RESULT;
+                display.getTFT()->fillScreen(UI_BG);
+                resultDrawn = false; // Allow drawing the new result
+                Serial.printf("[BLE] Switching to RESULT screen. Expr: %d, Response: %s\n", exprVal, responseText.c_str());
             }
             break;
         }
@@ -356,6 +406,44 @@ void handleBLECommand(uint8_t* data, size_t length) {
                     currentScreen = ScreenMode::DASHBOARD;
                     dashboardDrawn = false;
                     Serial.println("[BLE] Switched to Dashboard Screen via voice/BLE");
+                } else if (mode == 2 && payloadLen >= 6) {
+                    // Weather data sync: mode(1) + temp(4 float) + humidity(1) + forecast(rest)
+                    memcpy(&weatherTemp, payload + 1, 4);
+                    weatherHumidity = payload[5];
+                    if (payloadLen > 6) {
+                        size_t fLen = min((size_t)(payloadLen - 6), (size_t)31);
+                        memcpy(weatherForecast, payload + 6, fLen);
+                        weatherForecast[fLen] = '\0';
+                    }
+                    weatherSynced = true;
+                    if (currentScreen == ScreenMode::DASHBOARD) {
+                        dashboardDrawn = false; // Force redraw
+                    }
+                    Serial.printf("[BLE] Weather synced: %.1fC, %d%%, %s\n", weatherTemp, weatherHumidity, weatherForecast);
+                } else if (mode == 3) {
+                    // Disease detected — increment disease counter
+                    diseasesFound++;
+                    nvsPrefs.putUInt("diseases", diseasesFound);
+                    if (currentScreen == ScreenMode::DASHBOARD) {
+                        dashboardDrawn = false; // Force redraw
+                    }
+                    Serial.printf("[BLE] Disease count updated: %u\n", diseasesFound);
+                } else if (mode == 4) {
+                    // Stats sync: mode(1) + scans(4 bytes uint32) + diseases(4 bytes uint32)
+                    if (payloadLen >= 9) {
+                        uint32_t sCount = 0;
+                        uint32_t dCount = 0;
+                        memcpy(&sCount, payload + 1, 4);
+                        memcpy(&dCount, payload + 5, 4);
+                        totalScanCount = sCount;
+                        diseasesFound = dCount;
+                        nvsPrefs.putUInt("scans", totalScanCount);
+                        nvsPrefs.putUInt("diseases", diseasesFound);
+                        if (currentScreen == ScreenMode::DASHBOARD) {
+                            dashboardDrawn = false; // Force redraw
+                        }
+                        Serial.printf("[BLE] Stats synced: Scans=%u, Diseases=%u\n", totalScanCount, diseasesFound);
+                    }
                 }
             }
             break;
@@ -447,87 +535,106 @@ void drawBootScreen(float progress, const char* status) {
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  Dashboard Screen — Static elements (drawn once)
+//  Professional 4-card layout: Stats | Weather | Hardware | System
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 void drawDashboardStatic() {
     TFT_eSPI* tft = display.getTFT();
     
     tft->fillScreen(UI_BG);
     
-    // Header Bar
-    tft->fillRect(0, 0, SCREEN_WIDTH, 36, UI_DARK_GRAY);
-    tft->drawFastHLine(0, 36, SCREEN_WIDTH, UI_CYAN);
-    tft->drawFastHLine(0, 37, SCREEN_WIDTH, UI_DARK_CYAN);
+    // ── Header Bar ──
+    tft->fillRect(0, 0, SCREEN_WIDTH, 32, UI_DARK_GRAY);
+    tft->drawFastHLine(0, 32, SCREEN_WIDTH, UI_CYAN);
+    tft->drawFastHLine(0, 33, SCREEN_WIDTH, UI_DARK_CYAN);
     
     tft->setTextDatum(ML_DATUM);
-    tft->setTextSize(2);
-    tft->setTextColor(UI_CYAN, UI_DARK_GRAY);
-    tft->drawString(" AGROMATE SMART FARM ENGINE", 12, 18);
-    
-    int cardX1 = 10;
-    int cardX2 = 246;
-    int cardW = 224;
-    int cardH = 104;
-    int row1Y = 48;
-    int row2Y = 160;
-    
-    // Soil Conditions Card
-    tft->drawRoundRect(cardX1, row1Y, cardW, cardH, 6, UI_CYAN);
-    tft->fillRect(cardX1 + 1, row1Y + 1, cardW - 2, 22, UI_DARK_GRAY);
-    tft->drawFastHLine(cardX1 + 1, row1Y + 23, cardW - 2, UI_CYAN);
-    tft->setTextDatum(TL_DATUM);
     tft->setTextSize(1);
     tft->setTextColor(UI_CYAN, UI_DARK_GRAY);
-    tft->drawString(" SOIL CONDITIONS", cardX1 + 8, row1Y + 6);
-    tft->setTextColor(UI_WHITE, UI_BG);
-    tft->drawString("Moisture:  45% (Optimal)", cardX1 + 8, row1Y + 32);
+    tft->drawString(" AGROMATE DASHBOARD", 8, 16);
     
-    int barX = cardX1 + 8;
-    int barY = row1Y + 48;
-    int barW = cardW - 16;
-    int barH = 8;
-    tft->drawRect(barX, barY, barW, barH, UI_MID_GRAY);
-    tft->fillRect(barX + 1, barY + 1, (int)((barW - 2) * 0.45f), barH - 2, UI_GREEN);
+    // Card layout constants
+    int cardX1 = 8;
+    int cardX2 = 246;
+    int cardW = 226;
+    int cardH = 98;
+    int row1Y = 42;
+    int row2Y = 148;
     
-    tft->drawString("Soil Temp: 21.8 C", cardX1 + 8, row1Y + 62);
-    tft->drawString("Soil pH:   6.5 (Neutral)", cardX1 + 8, row1Y + 78);
-    
-    // Environment & Nutrients Card
-    tft->drawRoundRect(cardX1, row2Y, cardW, cardH, 6, UI_GREEN);
-    tft->fillRect(cardX1 + 1, row2Y + 1, cardW - 2, 22, UI_DARK_GRAY);
-    tft->drawFastHLine(cardX1 + 1, row2Y + 23, cardW - 2, UI_GREEN);
+    // ── Card 1: SCAN STATISTICS ──
+    tft->drawRoundRect(cardX1, row1Y, cardW, cardH, 5, UI_GREEN);
+    tft->fillRect(cardX1 + 1, row1Y + 1, cardW - 2, 20, UI_DARK_GRAY);
+    tft->drawFastHLine(cardX1 + 1, row1Y + 21, cardW - 2, UI_GREEN);
+    tft->setTextDatum(TL_DATUM);
+    tft->setTextSize(1);
     tft->setTextColor(UI_GREEN, UI_DARK_GRAY);
-    tft->drawString(" NUTRIENTS & NPK", cardX1 + 8, row2Y + 6);
-    tft->setTextColor(UI_WHITE, UI_BG);
-    tft->drawString("N: 42ppm | P: 18ppm | K: 35ppm", cardX1 + 8, row2Y + 32);
-    tft->drawString("Light:   450 Lux (Optimal)", cardX1 + 8, row2Y + 52);
-    tft->drawString("Conduct: 1.2 dS/m (Good)", cardX1 + 8, row2Y + 72);
+    tft->drawString(" SCAN STATISTICS", cardX1 + 6, row1Y + 5);
     
-    // Farm Weather Card
-    tft->drawRoundRect(cardX2, row1Y, cardW, cardH, 6, UI_YELLOW);
-    tft->fillRect(cardX2 + 1, row1Y + 1, cardW - 2, 22, UI_DARK_GRAY);
-    tft->drawFastHLine(cardX2 + 1, row1Y + 23, cardW - 2, UI_YELLOW);
+    // ── Card 2: WEATHER ──
+    tft->drawRoundRect(cardX2, row1Y, cardW, cardH, 5, UI_YELLOW);
+    tft->fillRect(cardX2 + 1, row1Y + 1, cardW - 2, 20, UI_DARK_GRAY);
+    tft->drawFastHLine(cardX2 + 1, row1Y + 21, cardW - 2, UI_YELLOW);
     tft->setTextColor(UI_YELLOW, UI_DARK_GRAY);
-    tft->drawString(" FARM WEATHER", cardX2 + 8, row1Y + 6);
-    tft->setTextColor(UI_WHITE, UI_BG);
-    tft->drawString("Air Temp:  28.5 C", cardX2 + 8, row1Y + 32);
-    tft->drawString("Humidity:  62% (Optimal)", cardX2 + 8, row1Y + 52);
-    tft->drawString("Forecast:  Sunny / Clear", cardX2 + 8, row1Y + 72);
+    tft->drawString(" WEATHER", cardX2 + 6, row1Y + 5);
     
-    // Robot System Status Card (static frame only)
-    tft->drawRoundRect(cardX2, row2Y, cardW, cardH, 6, UI_ORANGE);
-    tft->fillRect(cardX2 + 1, row2Y + 1, cardW - 2, 22, UI_DARK_GRAY);
-    tft->drawFastHLine(cardX2 + 1, row2Y + 23, cardW - 2, UI_ORANGE);
+    // ── Card 3: HARDWARE STATUS ──
+    tft->drawRoundRect(cardX1, row2Y, cardW, cardH, 5, UI_ORANGE);
+    tft->fillRect(cardX1 + 1, row2Y + 1, cardW - 2, 20, UI_DARK_GRAY);
+    tft->drawFastHLine(cardX1 + 1, row2Y + 21, cardW - 2, UI_ORANGE);
     tft->setTextColor(UI_ORANGE, UI_DARK_GRAY);
-    tft->drawString(" ROBOT SYSTEM STATUS", cardX2 + 8, row2Y + 6);
+    tft->drawString(" HARDWARE STATUS", cardX1 + 6, row2Y + 5);
     
-    // Footer button hint
-    int footerY = 276;
-    tft->drawRoundRect(10, footerY, SCREEN_WIDTH - 20, 34, 4, UI_CYAN);
-    tft->fillRect(11, footerY + 1, SCREEN_WIDTH - 22, 32, UI_DARK_BLUE);
+    // Hardware status rows (static — real init flags)
+    tft->setTextDatum(TL_DATUM);
+    tft->setTextSize(1);
+    
+    int hwY = row2Y + 28;
+    int hwLineH = 14;
+    
+    // Camera status
+    tft->setTextColor(hwCameraOk ? UI_GREEN : UI_RED, UI_BG);
+    tft->drawString(hwCameraOk ? "[OK]" : "[XX]", cardX1 + 8, hwY);
+    tft->setTextColor(UI_WHITE, UI_BG);
+    tft->drawString("Camera OV7670", cardX1 + 42, hwY);
+    
+    // Microphone status
+    tft->setTextColor(hwMicOk ? UI_GREEN : UI_RED, UI_BG);
+    tft->drawString(hwMicOk ? "[OK]" : "[XX]", cardX1 + 8, hwY + hwLineH);
+    tft->setTextColor(UI_WHITE, UI_BG);
+    tft->drawString("Microphone INMP441", cardX1 + 42, hwY + hwLineH);
+    
+    // Speaker status
+    tft->setTextColor(hwSpeakerOk ? UI_GREEN : UI_RED, UI_BG);
+    tft->drawString(hwSpeakerOk ? "[OK]" : "[XX]", cardX1 + 8, hwY + hwLineH * 2);
+    tft->setTextColor(UI_WHITE, UI_BG);
+    tft->drawString("Speaker MAX98357A", cardX1 + 42, hwY + hwLineH * 2);
+    
+    // LED status
+    tft->setTextColor(hwLedsOk ? UI_GREEN : UI_RED, UI_BG);
+    tft->drawString(hwLedsOk ? "[OK]" : "[XX]", cardX1 + 8, hwY + hwLineH * 3);
+    tft->setTextColor(UI_WHITE, UI_BG);
+    tft->drawString("LEDs WS2812B", cardX1 + 42, hwY + hwLineH * 3);
+    
+    // BLE status (drawn once, updated dynamically)
+    tft->setTextColor(hwBleOk ? UI_GREEN : UI_RED, UI_BG);
+    tft->drawString(hwBleOk ? "[OK]" : "[XX]", cardX1 + 118, hwY);
+    tft->setTextColor(UI_WHITE, UI_BG);
+    tft->drawString("BLE Init", cardX1 + 152, hwY);
+    
+    // ── Card 4: SYSTEM ──
+    tft->drawRoundRect(cardX2, row2Y, cardW, cardH, 5, UI_CYAN);
+    tft->fillRect(cardX2 + 1, row2Y + 1, cardW - 2, 20, UI_DARK_GRAY);
+    tft->drawFastHLine(cardX2 + 1, row2Y + 21, cardW - 2, UI_CYAN);
+    tft->setTextColor(UI_CYAN, UI_DARK_GRAY);
+    tft->drawString(" SYSTEM", cardX2 + 6, row2Y + 5);
+    
+    // ── Footer ──
+    int footerY = 258;
+    tft->drawRoundRect(8, footerY, SCREEN_WIDTH - 16, 28, 4, UI_CYAN);
+    tft->fillRect(9, footerY + 1, SCREEN_WIDTH - 18, 26, UI_DARK_BLUE);
     tft->setTextDatum(MC_DATUM);
     tft->setTextSize(1);
     tft->setTextColor(UI_CYAN, UI_DARK_BLUE);
-    tft->drawString("[ PRESS PHYSICAL BOOT BUTTON TO SHOW EYE ANIMATION ]", SCREEN_WIDTH / 2, footerY + 17);
+    tft->drawString("[ PRESS BOOT TO RETURN TO FACE ]", SCREEN_WIDTH / 2, footerY + 14);
     
     dashboardDrawn = true;
 }
@@ -538,36 +645,110 @@ void drawDashboardStatic() {
 void drawDashboardDynamic() {
     TFT_eSPI* tft = display.getTFT();
     
+    int cardX1 = 8;
     int cardX2 = 246;
-    int row2Y = 160;
+    int cardW = 226;
+    int row1Y = 42;
+    int row2Y = 148;
     
-    // BLE status in header
+    // ── Header: BLE connection status ──
     tft->setTextDatum(MR_DATUM);
     tft->setTextSize(1);
     tft->setTextColor(ble.isConnected() ? UI_GREEN : UI_RED, UI_DARK_GRAY);
-    tft->drawString(ble.isConnected() ? "BLE: SYNCED | SYS: OK " : "BLE: WAITING | SYS: OK ", SCREEN_WIDTH - 12, 18);
+    tft->drawString(ble.isConnected() ? "BLE: SYNCED  " : "BLE: WAITING ", SCREEN_WIDTH - 8, 16);
     
-    // Robot System Status — dynamic values
+    // ── Card 1: Scan Stats (dynamic values) ──
+    tft->fillRect(cardX1 + 7, row1Y + 25, cardW - 14, 68, UI_BG);
+    tft->setTextDatum(TL_DATUM);
+    tft->setTextSize(1);
+    
+    char scansBuf[32];
+    snprintf(scansBuf, sizeof(scansBuf), "Total Scans:  %u", totalScanCount);
+    tft->setTextColor(UI_WHITE, UI_BG);
+    tft->drawString(scansBuf, cardX1 + 8, row1Y + 28);
+    
+    char diseasesBuf[32];
+    snprintf(diseasesBuf, sizeof(diseasesBuf), "Diseases:     %u", diseasesFound);
+    tft->setTextColor(UI_WHITE, UI_BG);
+    tft->drawString(diseasesBuf, cardX1 + 8, row1Y + 44);
+    
+    // Scan success rate
+    if (totalScanCount > 0) {
+        int healthyPct = (int)(((float)(totalScanCount - diseasesFound) / totalScanCount) * 100);
+        char rateBuf[32];
+        snprintf(rateBuf, sizeof(rateBuf), "Healthy Rate: %d%%", healthyPct);
+        tft->setTextColor(healthyPct >= 70 ? UI_GREEN : UI_YELLOW, UI_BG);
+        tft->drawString(rateBuf, cardX1 + 8, row1Y + 60);
+    } else {
+        tft->setTextColor(UI_MID_GRAY, UI_BG);
+        tft->drawString("No scans yet", cardX1 + 8, row1Y + 60);
+    }
+    
+    // Scan progress bar
+    int barX = cardX1 + 8;
+    int barY = row1Y + 78;
+    int barW = cardW - 16;
+    tft->drawRect(barX, barY, barW, 8, UI_MID_GRAY);
+    if (totalScanCount > 0 && totalScanCount > diseasesFound) {
+        float healthyRatio = (float)(totalScanCount - diseasesFound) / totalScanCount;
+        tft->fillRect(barX + 1, barY + 1, (int)((barW - 2) * healthyRatio), 6, UI_GREEN);
+    }
+    
+    // ── Card 2: Weather (dynamic values) ──
+    tft->fillRect(cardX2 + 7, row1Y + 25, cardW - 14, 68, UI_BG);
+    tft->setTextDatum(TL_DATUM);
+    tft->setTextSize(1);
+    
+    if (weatherSynced) {
+        char tempBuf[32];
+        snprintf(tempBuf, sizeof(tempBuf), "Temp:     %.1f C", weatherTemp);
+        tft->setTextColor(UI_WHITE, UI_BG);
+        tft->drawString(tempBuf, cardX2 + 8, row1Y + 28);
+        
+        char humBuf[32];
+        snprintf(humBuf, sizeof(humBuf), "Humidity: %d%%", weatherHumidity);
+        tft->drawString(humBuf, cardX2 + 8, row1Y + 44);
+        
+        char fcastBuf[40];
+        snprintf(fcastBuf, sizeof(fcastBuf), "Forecast: %s", weatherForecast);
+        tft->drawString(fcastBuf, cardX2 + 8, row1Y + 60);
+    } else {
+        tft->setTextColor(UI_MID_GRAY, UI_BG);
+        tft->drawString("Awaiting sync...", cardX2 + 8, row1Y + 28);
+        tft->drawString("Connect via BLE", cardX2 + 8, row1Y + 44);
+        tft->drawString("to fetch weather", cardX2 + 8, row1Y + 60);
+    }
+    
+    // ── Card 4: System Info (dynamic values) ──
+    tft->fillRect(cardX2 + 7, row2Y + 25, cardW - 14, 68, UI_BG);
+    tft->setTextDatum(TL_DATUM);
+    tft->setTextSize(1);
+    tft->setTextColor(UI_WHITE, UI_BG);
+    
+    // Uptime
     unsigned long upSec = (millis() - bootTime) / 1000;
     int hours = upSec / 3600;
     int mins = (upSec % 3600) / 60;
     int secs = upSec % 60;
     
-    // Clear dynamic text area in System Status card
-    tft->fillRect(cardX2 + 7, row2Y + 28, 210, 56, UI_BG);
-    
-    tft->setTextDatum(TL_DATUM);
-    tft->setTextSize(1);
-    tft->setTextColor(UI_WHITE, UI_BG);
-    tft->drawString("Battery:   USB Powered", cardX2 + 8, row2Y + 32);
-    
     char uptimeBuf[32];
-    snprintf(uptimeBuf, sizeof(uptimeBuf), "Uptime:    %02d:%02d:%02d", hours, mins, secs);
-    tft->drawString(uptimeBuf, cardX2 + 8, row2Y + 52);
+    snprintf(uptimeBuf, sizeof(uptimeBuf), "Uptime:  %02d:%02d:%02d", hours, mins, secs);
+    tft->drawString(uptimeBuf, cardX2 + 8, row2Y + 28);
     
-    char memoryBuf[32];
-    snprintf(memoryBuf, sizeof(memoryBuf), "Free Heap: %dKB", ESP.getFreeHeap() / 1024);
-    tft->drawString(memoryBuf, cardX2 + 8, row2Y + 72);
+    // Free heap
+    char memBuf[32];
+    snprintf(memBuf, sizeof(memBuf), "Heap:    %dKB free", ESP.getFreeHeap() / 1024);
+    tft->drawString(memBuf, cardX2 + 8, row2Y + 44);
+    
+    // CPU frequency
+    char cpuBuf[32];
+    snprintf(cpuBuf, sizeof(cpuBuf), "CPU:     %dMHz", getCpuFrequencyMhz());
+    tft->drawString(cpuBuf, cardX2 + 8, row2Y + 60);
+    
+    // FPS
+    char fpsBuf[32];
+    snprintf(fpsBuf, sizeof(fpsBuf), "FPS:     %.1f", currentFPS);
+    tft->drawString(fpsBuf, cardX2 + 8, row2Y + 76);
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -648,29 +829,405 @@ void drawStatusBar() {
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-//  Button Handler (consumes interrupt flag)
+//  Result Screen — Disease Detected (Rich Two-Column Layout)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-void handleButton() {
-    if (!buttonPressed) return;
+void drawDiseaseResultScreen() {
+    TFT_eSPI* tft = display.getTFT();
+    tft->fillScreen(UI_BG);
     
-    unsigned long now = millis();
-    if ((now - lastBtnDebounce) < BTN_DEBOUNCE_MS) {
-        buttonPressed = false;
-        return;
+    // Parse pipe-delimited: D|PlantName|ScientificName|Confidence|DiseaseName|Severity|HealthScore|Symptoms|Treatments|AISummary
+    String data = latestAiResult;
+    String fields[10];
+    int fieldIdx = 0;
+    int startPos = 0;
+    for (int i = 0; i <= (int)data.length() && fieldIdx < 10; i++) {
+        if (i == (int)data.length() || data.charAt(i) == '|') {
+            fields[fieldIdx++] = data.substring(startPos, i);
+            startPos = i + 1;
+        }
     }
     
-    buttonPressed = false;
-    lastBtnDebounce = now;
-    btnPressCount++;
+    String plantName = (fieldIdx > 1) ? fields[1] : "Unknown";
+    String sciName   = (fieldIdx > 2) ? fields[2] : "N/A";
+    String confStr   = (fieldIdx > 3) ? fields[3] : "0";
+    String disease   = (fieldIdx > 4) ? fields[4] : "Unknown";
+    String severity  = (fieldIdx > 5) ? fields[5] : "moderate";
+    int healthScore  = (fieldIdx > 6) ? fields[6].toInt() : 50;
+    String symptoms  = (fieldIdx > 7) ? fields[7] : "";
+    String treatments= (fieldIdx > 8) ? fields[8] : "";
+    String aiSummary = (fieldIdx > 9) ? fields[9] : "";
     
-    Serial.printf("[BTN] Press #%d (ISR), screen=%d\n", btnPressCount, (int)currentScreen);
+    // ── HEADER BAR ──
+    tft->fillRect(0, 0, SCREEN_WIDTH, 28, UI_DARK_RED);
+    tft->drawFastHLine(0, 28, SCREEN_WIDTH, UI_RED);
+    tft->setTextDatum(ML_DATUM);
+    tft->setTextSize(1);
+    tft->setTextColor(UI_GREEN, UI_DARK_RED);
+    tft->drawString("AGROMATE AI", 8, 14);
     
-    if (currentScreen == ScreenMode::FACE) {
-        currentScreen = ScreenMode::DASHBOARD;
-        dashboardDrawn = false;
-    } else if (currentScreen == ScreenMode::DASHBOARD) {
-        currentScreen = ScreenMode::FACE;
-        display.getTFT()->fillScreen(UI_BG);
+    // Scan ID (right side)
+    char scanIdBuf[32];
+    snprintf(scanIdBuf, sizeof(scanIdBuf), "Scan #AGM-%06lu", totalScanCount);
+    tft->setTextDatum(MR_DATUM);
+    tft->setTextColor(UI_LIGHT_GRAY, UI_DARK_RED);
+    tft->drawString(scanIdBuf, SCREEN_WIDTH - 8, 14);
+    
+    // ── LEFT COLUMN: PLANT INFO (x: 8..230) ──
+    int leftX = 8;
+    int rightX = 245;
+    int colY = 36;
+    
+    tft->setTextDatum(TL_DATUM);
+    tft->setTextSize(1);
+    tft->setTextColor(UI_CYAN);
+    tft->drawString("PLANT INFORMATION", leftX, colY);
+    tft->drawFastHLine(leftX, colY + 12, 220, UI_DARK_GRAY);
+    colY += 18;
+    
+    // Plant name (large)
+    tft->setTextSize(2);
+    tft->setTextColor(UI_WHITE);
+    // Truncate plant name if too long
+    String dispPlantName = plantName;
+    if (dispPlantName.length() > 16) dispPlantName = dispPlantName.substring(0, 15) + ".";
+    tft->drawString(dispPlantName, leftX, colY);
+    colY += 22;
+    
+    // Scientific name (italic feel, smaller)
+    tft->setTextSize(1);
+    tft->setTextColor(UI_LIGHT_GRAY);
+    tft->drawString(sciName, leftX, colY);
+    colY += 14;
+    
+    // Confidence
+    tft->setTextColor(UI_DARK_CYAN);
+    char confBuf[32];
+    snprintf(confBuf, sizeof(confBuf), "Confidence: %s%%", confStr.c_str());
+    tft->drawString(confBuf, leftX, colY);
+    colY += 18;
+    
+    // ── RIGHT COLUMN: DISEASE ANALYSIS (x: 245..470) ──
+    int rColY = 36;
+    tft->setTextColor(UI_RED);
+    tft->drawString("DISEASE ANALYSIS", rightX, rColY);
+    tft->drawFastHLine(rightX, rColY + 12, 220, UI_DARK_GRAY);
+    rColY += 18;
+    
+    // Disease name
+    tft->setTextSize(2);
+    tft->setTextColor(UI_AMBER);
+    String dispDisease = disease;
+    if (dispDisease.length() > 16) dispDisease = dispDisease.substring(0, 15) + ".";
+    tft->drawString(dispDisease, rightX, rColY);
+    rColY += 22;
+    
+    // Severity badge
+    tft->setTextSize(1);
+    tft->setTextColor(UI_LIGHT_GRAY);
+    tft->drawString("Severity:", rightX, rColY);
+    
+    // Color-coded severity badge
+    uint16_t sevColor = UI_YELLOW;
+    if (severity == "high" || severity == "severe") sevColor = UI_RED;
+    else if (severity == "low") sevColor = UI_GREEN;
+    
+    int badgeX = rightX + 60;
+    tft->fillRoundRect(badgeX, rColY - 2, 70, 12, 3, sevColor);
+    tft->setTextColor(UI_BG, sevColor);
+    tft->setTextDatum(MC_DATUM);
+    String sevUpper = severity;
+    sevUpper.toUpperCase();
+    tft->drawString(sevUpper, badgeX + 35, rColY + 4);
+    tft->setTextDatum(TL_DATUM);
+    rColY += 16;
+    
+    // Status: DISEASED badge
+    tft->setTextColor(UI_LIGHT_GRAY);
+    tft->drawString("Status:", rightX, rColY);
+    tft->fillRoundRect(rightX + 60, rColY - 2, 70, 12, 3, UI_RED);
+    tft->setTextColor(UI_WHITE, UI_RED);
+    tft->setTextDatum(MC_DATUM);
+    tft->drawString("DISEASED", rightX + 95, rColY + 4);
+    tft->setTextDatum(TL_DATUM);
+    rColY += 18;
+    
+    // ── DIVIDER ──
+    int divY = 120;
+    tft->drawFastHLine(8, divY, SCREEN_WIDTH - 16, UI_DARK_GRAY);
+    
+    // ── HEALTH SCORE BAR ──
+    int barY = divY + 6;
+    tft->setTextSize(1);
+    tft->setTextColor(UI_CYAN);
+    tft->drawString("HEALTH SCORE", leftX, barY);
+    
+    int barX = leftX;
+    int barW = SCREEN_WIDTH - 90;
+    int barH = 14;
+    barY += 14;
+    
+    // Bar outline
+    tft->drawRect(barX, barY, barW, barH, UI_MID_GRAY);
+    
+    // Fill with gradient based on health score
+    int fillW = (barW - 4) * healthScore / 100;
+    uint16_t barColor = UI_RED;
+    if (healthScore > 60) barColor = UI_GREEN;
+    else if (healthScore > 35) barColor = UI_YELLOW;
+    else if (healthScore > 15) barColor = UI_ORANGE;
+    tft->fillRect(barX + 2, barY + 2, fillW, barH - 4, barColor);
+    
+    // Health score percentage
+    char hsBuf[8];
+    snprintf(hsBuf, sizeof(hsBuf), "%d%%", healthScore);
+    tft->setTextDatum(ML_DATUM);
+    tft->setTextColor(UI_WHITE);
+    tft->drawString(hsBuf, barX + barW + 6, barY + barH / 2);
+    tft->setTextDatum(TL_DATUM);
+    
+    // ── DETECTED SYMPTOMS ──
+    int symY = barY + barH + 10;
+    tft->setTextColor(UI_CYAN);
+    tft->drawString("DETECTED SYMPTOMS", leftX, symY);
+    tft->drawFastHLine(leftX, symY + 12, 200, UI_DARK_GRAY);
+    symY += 16;
+    
+    // Parse semicolon-separated symptoms
+    tft->setTextColor(UI_AMBER);
+    int sStart = 0;
+    int symCount = 0;
+    for (int i = 0; i <= (int)symptoms.length() && symCount < 4; i++) {
+        if (i == (int)symptoms.length() || symptoms.charAt(i) == ';') {
+            String sym = symptoms.substring(sStart, i);
+            sym.trim();
+            if (sym.length() > 0) {
+                char symBuf[48];
+                snprintf(symBuf, sizeof(symBuf), "> %s", sym.c_str());
+                tft->drawString(symBuf, leftX + 4, symY);
+                symY += 12;
+                symCount++;
+            }
+            sStart = i + 1;
+        }
+    }
+    
+    // ── TREATMENTS (right column, below divider) ──
+    int trtY = divY + 6;
+    tft->setTextColor(UI_GREEN);
+    tft->drawString("TREATMENT", rightX, trtY);
+    tft->drawFastHLine(rightX, trtY + 12, 200, UI_DARK_GRAY);
+    trtY += 16;
+    
+    tft->setTextColor(UI_WHITE);
+    int tStart = 0;
+    int trtCount = 0;
+    for (int i = 0; i <= (int)treatments.length() && trtCount < 3; i++) {
+        if (i == (int)treatments.length() || treatments.charAt(i) == ';') {
+            String trt = treatments.substring(tStart, i);
+            trt.trim();
+            if (trt.length() > 0) {
+                // Truncate long treatment strings
+                if (trt.length() > 28) trt = trt.substring(0, 27) + ".";
+                char trtBuf[48];
+                snprintf(trtBuf, sizeof(trtBuf), "+ %s", trt.c_str());
+                tft->drawString(trtBuf, rightX + 4, trtY);
+                trtY += 12;
+                trtCount++;
+            }
+            tStart = i + 1;
+        }
+    }
+    
+    // ── AI SUMMARY FOOTER ──
+    int footY = SCREEN_HEIGHT - 55;
+    tft->drawFastHLine(8, footY, SCREEN_WIDTH - 16, UI_DARK_GRAY);
+    footY += 6;
+    tft->setTextColor(UI_DARK_CYAN);
+    tft->drawString("AI SUMMARY", leftX, footY);
+    footY += 12;
+    tft->setTextColor(UI_LIGHT_GRAY);
+    // Word wrap AI summary to 2 lines max
+    if (aiSummary.length() > 60) {
+        tft->drawString(aiSummary.substring(0, 60), leftX, footY);
+        footY += 10;
+        tft->drawString(aiSummary.substring(60), leftX, footY);
+    } else {
+        tft->drawString(aiSummary, leftX, footY);
+    }
+    
+    // ── BOTTOM NAV ──
+    int navY = SCREEN_HEIGHT - 16;
+    tft->drawFastHLine(0, navY - 4, SCREEN_WIDTH, UI_DARK_GRAY);
+    tft->setTextDatum(MC_DATUM);
+    tft->setTextSize(1);
+    tft->setTextColor(UI_GREEN);
+    tft->drawString("[BOOT] Dismiss", SCREEN_WIDTH / 2, navY + 4);
+    tft->setTextDatum(TL_DATUM);
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  Result Screen — Healthy Plant (Clean Centered Layout)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+void drawHealthyResultScreen() {
+    TFT_eSPI* tft = display.getTFT();
+    tft->fillScreen(UI_BG);
+    
+    // Parse pipe-delimited: H|PlantName|ScientificName|Confidence|HealthScore|Tips
+    String data = latestAiResult;
+    String fields[6];
+    int fieldIdx = 0;
+    int startPos = 0;
+    for (int i = 0; i <= (int)data.length() && fieldIdx < 6; i++) {
+        if (i == (int)data.length() || data.charAt(i) == '|') {
+            fields[fieldIdx++] = data.substring(startPos, i);
+            startPos = i + 1;
+        }
+    }
+    
+    String plantName = (fieldIdx > 1) ? fields[1] : "Unknown";
+    String sciName   = (fieldIdx > 2) ? fields[2] : "N/A";
+    String confStr   = (fieldIdx > 3) ? fields[3] : "0";
+    int healthScore  = (fieldIdx > 4) ? fields[4].toInt() : 95;
+    String tips      = (fieldIdx > 5) ? fields[5] : "";
+    
+    int cx = SCREEN_WIDTH / 2;
+    
+    // ── HEADER BAR ──
+    tft->fillRect(0, 0, SCREEN_WIDTH, 28, UI_DARK_GREEN);
+    tft->drawFastHLine(0, 28, SCREEN_WIDTH, UI_GREEN);
+    tft->setTextDatum(MC_DATUM);
+    tft->setTextSize(1);
+    tft->setTextColor(UI_WHITE, UI_DARK_GREEN);
+    tft->drawString("AGROMATE AI  -  Plant Health Scan Result", cx, 14);
+    
+    // ── PLANT INFO (centered) ──
+    int y = 42;
+    tft->setTextDatum(MC_DATUM);
+    tft->setTextSize(2);
+    tft->setTextColor(UI_WHITE);
+    tft->drawString(plantName, cx, y);
+    y += 22;
+    
+    tft->setTextSize(1);
+    tft->setTextColor(UI_LIGHT_GRAY);
+    tft->drawString(sciName, cx, y);
+    y += 14;
+    
+    char confBuf[32];
+    snprintf(confBuf, sizeof(confBuf), "Confidence: %s%%", confStr.c_str());
+    tft->setTextColor(UI_DARK_CYAN);
+    tft->drawString(confBuf, cx, y);
+    y += 22;
+    
+    // ── DIVIDER ──
+    tft->drawFastHLine(60, y, SCREEN_WIDTH - 120, UI_DARK_GRAY);
+    y += 10;
+    
+    // ── HEALTHY STATUS BADGE ──
+    int badgeW = 180;
+    int badgeH = 36;
+    int badgeX = cx - badgeW / 2;
+    tft->fillRoundRect(badgeX, y, badgeW, badgeH, 8, UI_GREEN);
+    tft->setTextSize(2);
+    tft->setTextColor(UI_BG, UI_GREEN);
+    tft->drawString("HEALTHY", cx, y + badgeH / 2);
+    y += badgeH + 14;
+    
+    // ── HEALTH SCORE BAR ──
+    tft->setTextSize(1);
+    tft->setTextColor(UI_CYAN);
+    tft->drawString("HEALTH SCORE", cx, y);
+    y += 14;
+    
+    int barW = 300;
+    int barH = 16;
+    int barX = cx - barW / 2;
+    
+    tft->drawRect(barX, y, barW, barH, UI_MID_GRAY);
+    int fillW = (barW - 4) * healthScore / 100;
+    tft->fillRect(barX + 2, y + 2, fillW, barH - 4, UI_GREEN);
+    
+    char hsBuf[8];
+    snprintf(hsBuf, sizeof(hsBuf), "%d%%", healthScore);
+    tft->setTextColor(UI_WHITE);
+    tft->drawString(hsBuf, cx, y + barH + 10);
+    y += barH + 24;
+    
+    // ── DIVIDER ──
+    tft->drawFastHLine(60, y, SCREEN_WIDTH - 120, UI_DARK_GRAY);
+    y += 10;
+    
+    // ── RECOMMENDATIONS ──
+    tft->setTextColor(UI_GREEN);
+    tft->drawString("RECOMMENDATIONS", cx, y);
+    y += 14;
+    
+    tft->setTextDatum(TL_DATUM);
+    tft->setTextColor(UI_WHITE);
+    int tStart = 0;
+    int tipCount = 0;
+    int tipX = 80;
+    for (int i = 0; i <= (int)tips.length() && tipCount < 4; i++) {
+        if (i == (int)tips.length() || tips.charAt(i) == ';') {
+            String tip = tips.substring(tStart, i);
+            tip.trim();
+            if (tip.length() > 0) {
+                char tipBuf[48];
+                snprintf(tipBuf, sizeof(tipBuf), "+ %s", tip.c_str());
+                tft->drawString(tipBuf, tipX, y);
+                y += 12;
+                tipCount++;
+            }
+            tStart = i + 1;
+        }
+    }
+    
+    // ── BOTTOM NAV ──
+    int navY = SCREEN_HEIGHT - 16;
+    tft->drawFastHLine(0, navY - 4, SCREEN_WIDTH, UI_DARK_GRAY);
+    tft->setTextDatum(MC_DATUM);
+    tft->setTextSize(1);
+    tft->setTextColor(UI_GREEN);
+    tft->drawString("[BOOT] Dismiss", cx, navY + 4);
+    tft->setTextDatum(TL_DATUM);
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  Button Handler (Software Polling)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+void handleButton() {
+    static unsigned long lastDebounceTime = 0;
+    static bool debouncedState = HIGH;
+    static bool lastRawState = HIGH;
+    
+    bool rawState = digitalRead(BTN_PIN);
+    unsigned long now = millis();
+    
+    if (rawState != lastRawState) {
+        lastDebounceTime = now;
+        lastRawState = rawState;
+    }
+    
+    if ((now - lastDebounceTime) > BTN_DEBOUNCE_MS) {
+        if (rawState != debouncedState) {
+            debouncedState = rawState;
+            if (debouncedState == LOW) { // Press event (active-low BOOT button)
+                btnPressCount++;
+                Serial.printf("[BTN] Valid press #%d, switching screen from %d...\n", btnPressCount, (int)currentScreen);
+                
+                if (currentScreen == ScreenMode::FACE) {
+                    currentScreen = ScreenMode::DASHBOARD;
+                    dashboardDrawn = false;
+                } else if (currentScreen == ScreenMode::DASHBOARD) {
+                    currentScreen = ScreenMode::FACE;
+                    display.getTFT()->fillScreen(UI_BG);
+                } else if (currentScreen == ScreenMode::RESULT) {
+                    currentScreen = ScreenMode::FACE;
+                    display.getTFT()->fillScreen(UI_BG);
+                    resultDrawn = false;
+                }
+            }
+        }
     }
 }
 
@@ -708,6 +1265,10 @@ void updateDemo() {
 //  Setup
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 void setup() {
+    // Set custom base MAC address to bypass Windows BLE caching
+    uint8_t customMac[] = {0x28, 0x84, 0x85, 0x4D, 0x11, 0x50};
+    esp_base_mac_addr_set(customMac);
+
     esp_log_set_vprintf(simple_vprintf);
     setCpuFrequencyMhz(240); // Run at 240MHz for stable clock configuration of LCD_CAM and LEDC
     
@@ -739,14 +1300,19 @@ void setup() {
     delay(500);
     
     Serial.println("\n=============================================");
-    Serial.println("   AgroMate Robot — Production Build v2.0");
+    Serial.println("   AgroMate Robot — Production Build v3.0");
     Serial.println("=============================================");
+    
+    // Load persistent scan counter from NVS flash
+    nvsPrefs.begin("agromate", false);
+    totalScanCount = nvsPrefs.getUInt("scans", 0);
+    diseasesFound = nvsPrefs.getUInt("diseases", 0);
+    Serial.printf("[NVS] Loaded scan count: %u, diseases: %u\n", totalScanCount, diseasesFound);
     
     // TFT RD line is physically not connected, no need to drive GPIO 20.
  
-    // Configure BOOT button (disabled - voice controlled screen transitions)
-    // pinMode(BTN_PIN, INPUT_PULLUP);
-    // attachInterrupt(digitalPinToInterrupt(BTN_PIN), buttonISR, FALLING);
+    // Configure BOOT button for Face ↔ Dashboard toggle
+    pinMode(BTN_PIN, INPUT_PULLUP);
     
     // ── Actual Sequential System Initialization ──
     // 1. Probe and initialize camera first to avoid LCD_CAM conflict with parallel TFT
@@ -759,8 +1325,14 @@ void setup() {
         Serial.printf("[BOOT] Camera init failed (try %d/3). Retrying...\n", retry + 1);
         delay(200); // Wait 200ms before retrying
     }
+    hwCameraOk = (cameraErr == 0);
     
-    // 2. Initialize display screen next
+    // 2. Release hardware UART0 serial port pins (GPIO 43/44) so they can be driven by the Display parallel bus
+    Serial.println("[TFT] Releasing serial port pins (GPIO 43/44) for Display bus...");
+    Serial.flush();
+    Serial.end();
+
+    // Initialize display screen next
     display.begin();
     
     drawBootScreen(0.40f, "Loading display settings...");
@@ -784,14 +1356,18 @@ void setup() {
     drawBootScreen(0.45f, "Starting BLE Client...");
     ble.begin(BLE_DEVICE_NAME);
     ble.onCommand(handleBLECommand);
+    hwBleOk = true;
     delay(150);
     
     drawBootScreen(0.70f, "Hooking I2S Mic & Speaker...");
     audio.begin();
+    hwMicOk = true;
+    hwSpeakerOk = true;
     delay(150);
     
     drawBootScreen(0.85f, "Syncing WS2812B Status LEDs...");
     leds.begin();
+    hwLedsOk = true;
     delay(150);
     
     drawBootScreen(1.0f, "AgroMate system ready!");
@@ -821,8 +1397,8 @@ void setup() {
 void loop() {
     unsigned long now = millis();
     
-    // Consume interrupt-driven button press (disabled - voice controlled screen transitions)
-    // handleButton();
+    // Consume interrupt-driven button press
+    handleButton();
     
     // System core updates
     ble.update();
@@ -861,6 +1437,15 @@ void loop() {
     }
     lastAudioRecording = currentAudioRecording;
     
+    // Camera frame release monitor after BLE transmission completes
+    static bool lastTxActive = false;
+    bool currentTxActive = ble.isTxActive();
+    if (lastTxActive && !currentTxActive) {
+        camera.releaseFrame();
+        Serial.println("[CAM] BLE Image transfer complete. Released camera frame buffer.");
+    }
+    lastTxActive = currentTxActive;
+    
     // Audio lipsync update
     if (audio.isPlaying()) {
         face.setExpression(Expression::TALKING);
@@ -897,6 +1482,64 @@ void loop() {
     } else if (currentScreen == ScreenMode::PREVIEW) {
         // Run full preview routine and restore screen mode after
         runScanPreview();
+    } else if (currentScreen == ScreenMode::RESULT) {
+        if (!resultDrawn) {
+            // Dispatch to the appropriate result screen based on the first character
+            if (latestAiResult.startsWith("D|")) {
+                drawDiseaseResultScreen();
+            } else if (latestAiResult.startsWith("H|")) {
+                drawHealthyResultScreen();
+            } else {
+                // Fallback: legacy plain text result
+                display.getTFT()->fillScreen(UI_BG);
+                display.getTFT()->fillRect(0, 0, SCREEN_WIDTH, 28, UI_DARK_BLUE);
+                display.getTFT()->setTextColor(UI_WHITE);
+                display.getTFT()->setTextDatum(MC_DATUM);
+                display.getTFT()->setTextSize(1);
+                display.getTFT()->drawString("AI DETECTION RESULT", SCREEN_WIDTH / 2, 14);
+                display.getTFT()->setTextSize(1);
+                display.getTFT()->setTextColor(UI_CYAN);
+                display.getTFT()->setTextDatum(TL_DATUM);
+                int cursorY = 40;
+                int cursorX = 10;
+                int idx = 0;
+                while(idx < (int)latestAiResult.length()) {
+                    int nl = latestAiResult.indexOf('\n', idx);
+                    String line = (nl == -1) ? latestAiResult.substring(idx) : latestAiResult.substring(idx, nl);
+                    display.getTFT()->drawString(line, cursorX, cursorY);
+                    cursorY += 14;
+                    idx = (nl == -1) ? (int)latestAiResult.length() : nl + 1;
+                }
+            }
+            resultDrawn = true;
+        }
+    }
+    
+    // Voice Bar Overlay
+    if (audio.isPlaying()) {
+        static unsigned long lastVoiceAnim = 0;
+        if (now - lastVoiceAnim > 50) {
+            lastVoiceAnim = now;
+            int barWidth = SCREEN_WIDTH - 40;
+            int barHeight = 20;
+            int barX = 20;
+            int barY = SCREEN_HEIGHT - 30;
+            
+            // Background
+            display.getTFT()->fillRect(barX, barY, barWidth, barHeight, UI_DARK_GRAY);
+            
+            // Active level (randomized based on audio playback level)
+            float level = audio.getPlaybackLevel();
+            int activeBars = (int)(level * 10.0f);
+            if (activeBars > 10) activeBars = 10;
+            if (activeBars < 1) activeBars = 1;
+            
+            int segmentWidth = barWidth / 10;
+            for (int i = 0; i < activeBars; i++) {
+                uint16_t color = (i > 7) ? UI_RED : ((i > 4) ? UI_CYAN : UI_GREEN);
+                display.getTFT()->fillRect(barX + (i * segmentWidth) + 1, barY + 2, segmentWidth - 2, barHeight - 4, color);
+            }
+        }
     }
     
     yield();

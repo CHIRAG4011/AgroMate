@@ -145,7 +145,7 @@ class VoiceSynthesizer:
         rate: str = "+0%",
         pitch: str = "+0Hz",
         compress_for_robot: bool = False,
-        engine: str = "edge-tts",
+        engine: str = "gemini",
     ) -> Optional[SynthesisResult]:
         """
         Synthesize speech from text.
@@ -173,47 +173,44 @@ class VoiceSynthesizer:
             if detected != "en" or language == "auto":
                 language = detected
                 logger.info(f"Auto-detected TTS language for speech synthesis: {language}")
+        
+        result = None
 
         # Check if Gemini or ElevenLabs engine is requested and Gemini is available
         if (engine == "elevenlabs" or engine == "gemini") and self.settings.gemini_api_key:
             voice_name = voice or ("Kore" if gender == "female" else "Puck")
             result = await self._synthesize_gemini(text, voice_name, language)
-            if result:
-                if compress_for_robot:
-                    result.audio_data = compress_for_ble(result.audio_data)
-                return result
 
-        # Check if ElevenLabs engine is requested and available
-        if engine == "elevenlabs" and self.settings.elevenlabs_api_key:
+        # Check if ElevenLabs engine is requested and available (if not already synthesized by Gemini fallback)
+        if not result and engine == "elevenlabs" and self.settings.elevenlabs_api_key:
             el_voice = voice
             if not el_voice:
-                # Default voice selection based on gender
                 el_voice = self.settings.elevenlabs_voice_id or ("EXAVITQu4vr4xnSDxMaL" if gender == "female" else "pNInz6obpgHs517G4SMt")
-            
             result = await self._synthesize_elevenlabs(text, el_voice, language)
-            if result:
-                if compress_for_robot:
-                    result.audio_data = compress_for_ble(result.audio_data)
-                return result
-
-        # Select voice — use override, or look up from language map
-        if voice is None:
-            voice = get_tts_voice(language, gender)
 
         # Try Edge-TTS
-        if self._edge_tts_available:
-            result = await self._synthesize_edge_tts(text, voice, rate, pitch, language)
-            if result:
-                if compress_for_robot:
-                    result.audio_data = compress_for_ble(result.audio_data)
-                return result
+        if not result:
+            if voice is None:
+                voice = get_tts_voice(language, gender)
+            if self._edge_tts_available:
+                result = await self._synthesize_edge_tts(text, voice, rate, pitch, language)
 
         # Fallback to pyttsx3 (offline)
-        result = await self._synthesize_pyttsx3(text, language)
-        if result:
-            if compress_for_robot:
-                result.audio_data = compress_for_ble(result.audio_data)
-            return result
+        if not result:
+            result = await self._synthesize_pyttsx3(text, language)
+
+        # Handle compression and raw PCM decoding for the robot
+        if result and compress_for_robot:
+            if result.format != "pcm":
+                from ..utils.audio_utils import decode_to_pcm
+                pcm_data = decode_to_pcm(result.audio_data, result.format)
+                result.audio_data = pcm_data
+                result.format = "pcm"
+                result.sample_rate = 16000
+            
+            result.audio_data = compress_for_ble(result.audio_data)
+
+        return result
 
     async def _synthesize_gemini(
         self,
@@ -340,7 +337,7 @@ class VoiceSynthesizer:
         language: str = "en",
         voice: str = None,
         gender: str = "female",
-        engine: str = "edge-tts",
+        engine: str = "gemini",
     ) -> Optional[SectionedSynthesisResult]:
         """
         Synthesize a long text by splitting into logical sections.

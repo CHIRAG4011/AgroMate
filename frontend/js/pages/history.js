@@ -77,7 +77,7 @@ async function loadHistoryLogs() {
   if (data && data.scans && data.scans.length > 0) {
     body.innerHTML = data.scans.map(scan => {
       const diag = scan.diagnoses && scan.diagnoses[0];
-      const isHealthy = diag ? diag.is_healthy : true;
+      const isHealthy = scan.scan_type === 'identification' || (diag && (diag.disease_name === 'Healthy' || diag.disease_name === 'none'));
       const confidence = diag ? Math.round(diag.confidence * 100) : 0;
       const cropName = diag ? diag.plant_name : 'Unknown Plant';
       const condName = diag ? (isHealthy ? 'Healthy' : diag.disease_name) : 'Pending';

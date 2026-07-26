@@ -73,8 +73,18 @@ async function renderDashboard(container) {
           <div class="telemetry-feed" id="telemetryFeed" style="max-height:220px; overflow-y:auto; font-family:var(--font-mono); font-size:0.8rem; background:rgba(0,0,0,0.2); padding:var(--space-md); border-radius:var(--radius-md); border:var(--glass-border); line-height:1.4;">
             <!-- Telemetry rows updated in JS -->
           </div>
+          
+          <!-- Last Scan Preview Card -->
+          <div id="telemetryScanPreview" style="margin-top:var(--space-md); display:none; text-align:center;">
+            <div style="font-size:0.75rem; color:var(--text-secondary); margin-bottom:6px; text-align:left; font-weight:600;">📸 Last Robot Scan Preview:</div>
+            <div style="position:relative; border-radius:var(--radius-md); overflow:hidden; border:1px solid var(--border-subtle); background:#000; height:180px; display:flex; align-items:center; justify-content:center;">
+              <img id="telemetryScanImg" src="" alt="Last robot scan" style="max-width:100%; max-height:100%; object-fit:contain;">
+              <div id="telemetryScanLabel" style="position:absolute; bottom:0; left:0; right:0; background:rgba(0,0,0,0.7); padding:6px; font-size:0.75rem; color:#fff; text-align:left;"></div>
+            </div>
+          </div>
+
           <div style="display:flex; gap:var(--space-sm); margin-top:var(--space-md);">
-            <button class="btn btn-primary btn-sm" onclick="sendMockBotCmd('diagnose')" style="flex:1;">📸 Scan Now</button>
+            <button class="btn btn-primary btn-sm" onclick="triggerDashboardRobotScan()" style="flex:1;">📸 Scan Now</button>
             <button class="btn btn-secondary btn-sm" onclick="sendMockBotCmd('patrol')" style="flex:1;">🚀 Patrol</button>
           </div>
         </div>
@@ -132,6 +142,7 @@ async function renderDashboard(container) {
   loadRecentActivity();
   startLiveTelemetry();
   checkApiKeysStatus();
+  loadLastScanPreview();
 
   // Re-translate current DOM (e.g. data-i18n tags)
   i18n.translateDOM();
@@ -275,7 +286,7 @@ async function loadRecentActivity() {
   if (scans && scans.scans && scans.scans.length > 0) {
     el.innerHTML = scans.scans.map(scan => {
       const diag = scan.diagnoses && scan.diagnoses[0];
-      const isHealthy = diag ? diag.is_healthy : true;
+      const isHealthy = scan.scan_type === 'identification' || (diag && (diag.disease_name === 'Healthy' || diag.disease_name === 'none'));
       const title = diag ? diag.plant_name : 'Unknown Plant';
       const detail = diag ? (isHealthy ? 'Healthy' : diag.disease_name) : 'No disease info';
       const icon = isHealthy ? '✅' : '⚠️';
@@ -405,5 +416,52 @@ async function checkApiKeysStatus() {
     }
   } catch (err) {
     el.innerHTML = '<div style="font-size:0.85rem; color:var(--text-tertiary);">Failed to query API statuses</div>';
+  }
+}
+
+async function loadLastScanPreview() {
+  const container = document.getElementById('telemetryScanPreview');
+  const img = document.getElementById('telemetryScanImg');
+  const label = document.getElementById('telemetryScanLabel');
+  if (!container || !img || !label) return;
+
+  try {
+    const data = await api.get('/scans/?limit=1');
+    if (data && data.scans && data.scans.length > 0) {
+      const scan = data.scans[0];
+      const diag = scan.diagnoses && scan.diagnoses[0];
+      if (diag && scan.image_path) {
+        img.src = scan.image_path;
+        label.innerHTML = `<strong>${diag.plant_name}</strong> • ${diag.disease_name} (Conf: ${(diag.confidence * 100).toFixed(1)}%)`;
+        container.style.display = 'block';
+      }
+    }
+  } catch (err) {
+    console.error('Failed to load last scan preview:', err);
+  }
+}
+
+async function triggerDashboardRobotScan() {
+  showToast('Fetching active robots...', 'info');
+  try {
+    const res = await api.get('/robots/');
+    if (res && res.robots && res.robots.length > 0) {
+      const connectedRobot = res.robots.find(r => r.connected || r.state === 'active');
+      if (connectedRobot) {
+        showToast(`Triggering camera scan on ${connectedRobot.name}...`, 'info');
+        const scanRes = await api.post(`/robots/${connectedRobot.robot_id}/scan`);
+        if (scanRes && scanRes.status === 'success') {
+          showToast('Scan command sent successfully!', 'success');
+        } else {
+          showToast('Failed to send scan command', 'error');
+        }
+      } else {
+        showToast('No active connected robots found!', 'error');
+      }
+    } else {
+      showToast('No robots registered in backend!', 'error');
+    }
+  } catch (err) {
+    showToast('Failed to trigger robot scan', 'error');
   }
 }

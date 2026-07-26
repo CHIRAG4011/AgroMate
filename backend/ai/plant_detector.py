@@ -29,6 +29,56 @@ PLANT_CLASSES = [
 ]
 
 
+def get_common_name_by_scientific(scientific: str) -> str:
+    if not scientific:
+        return ""
+    
+    sci_clean = scientific.lower().strip()
+    
+    # 1. Check local seed database
+    try:
+        from ..database.seed import COMMON_PLANTS
+        for plant in COMMON_PLANTS:
+            if plant["scientific"].lower() in sci_clean or sci_clean in plant["scientific"].lower():
+                return plant["name"]
+    except Exception:
+        pass
+            
+    # 2. Fallback dictionary for common plants, houseplants, and other groups
+    scientific_to_common = {
+        "epipremnum aureum": "Money Plant (Golden Pothos)",
+        "pothos": "Money Plant",
+        "epipremnum": "Money Plant",
+        "homophron": "Fungal Mushroom / Plant",
+        "clitoria ternatea": "Butterfly Pea (Aparajita)",
+        "monstera deliciosa": "Monstera (Split-leaf Philodendron)",
+        "sansevieria trifasciata": "Snake Plant",
+        "dracaena trifasciata": "Snake Plant",
+        "spathiphyllum": "Peace Lily",
+        "chlorophytum comosum": "Spider Plant",
+        "ficus elastica": "Rubber Plant",
+        "ficus lyrata": "Fiddle Leaf Fig",
+        "calathea": "Calathea (Prayer Plant)",
+        "agaricus": "Mushroom",
+        "rosa": "Rose",
+        "hibiscus rosa-sinensis": "Hibiscus",
+        "aloe vera": "Aloe Vera",
+        "ocimum tenuiflorum": "Tulsi (Holy Basil)",
+        "azadirachta indica": "Neem",
+        "coriandrum sativum": "Coriander (Dhaniya)",
+        "mentha": "Mint (Pudina)",
+        "musa": "Banana",
+        "gossypium": "Cotton",
+        "citrus": "Citrus Plant",
+    }
+    
+    for key, val in scientific_to_common.items():
+        if key in sci_clean:
+            return val
+            
+    return scientific.title()
+
+
 @dataclass
 class PlantDetectionResult:
     """Result of plant identification."""
@@ -46,6 +96,12 @@ class PlantDetectionResult:
             self.common_names = []
         if self.top_5 is None:
             self.top_5 = []
+            
+        # Try to resolve a cleaner common name if plant_name is a scientific duplicate or generic
+        if self.scientific_name and (not self.plant_name or self.plant_name == "Unknown" or self.plant_name == self.scientific_name):
+            resolved = get_common_name_by_scientific(self.scientific_name)
+            if resolved:
+                self.plant_name = resolved
 
     def to_dict(self) -> dict:
         return {
@@ -173,9 +229,21 @@ class PlantDetector:
             best_idx = top_indices[0]
             best_name = self._class_labels[best_idx] if best_idx < len(self._class_labels) else f"Class_{best_idx}"
 
+            # Look up scientific name from seed database
+            sc_name = ""
+            try:
+                from ..database.seed import COMMON_PLANTS
+                for plant in COMMON_PLANTS:
+                    if plant["name"].lower() == best_name.lower():
+                        sc_name = plant["scientific"]
+                        break
+            except Exception:
+                pass
+
             return PlantDetectionResult(
                 plant_name=best_name,
                 confidence=float(probabilities[best_idx]),
+                scientific_name=sc_name,
                 top_5=top_5,
                 model_used="local_onnx",
             )

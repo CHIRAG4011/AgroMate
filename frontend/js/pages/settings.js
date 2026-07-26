@@ -38,7 +38,7 @@ async function renderSettings(container) {
           </div>
           <select class="input" id="voiceEngineSelect" style="width:140px;" onchange="saveVoiceSettings()">
             <option value="edge-tts" ${localStorage.getItem('agromate-voice-engine') === 'edge-tts' ? 'selected' : ''}>Edge-TTS</option>
-            <option value="gemini" ${localStorage.getItem('agromate-voice-engine') === 'gemini' || localStorage.getItem('agromate-voice-engine') === 'elevenlabs' ? 'selected' : ''}>Gemini Multimodal AI</option>
+            <option value="gemini" ${localStorage.getItem('agromate-voice-engine') !== 'edge-tts' ? 'selected' : ''}>Gemini Multimodal AI</option>
           </select>
         </div>
 

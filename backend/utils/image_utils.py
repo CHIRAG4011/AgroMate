@@ -189,3 +189,64 @@ def crop_center(image: Image.Image, target_ratio: float = 1.0) -> Image.Image:
         new_h = int(w / target_ratio)
         top = (h - new_h) // 2
         return image.crop((0, top, w, top + new_h))
+
+
+def convert_raw_to_jpeg(data: bytes) -> bytes:
+    """
+    Check if the input bytes match raw camera formats (Grayscale or YUV422) at 320x240
+    and convert them to standard JPEG bytes using OpenCV for superior quality.
+    If it's already a JPEG, return it as-is.
+    """
+    import cv2
+    import numpy as np
+
+    # QVGA Grayscale = 320 * 240 * 1 = 76800 bytes
+    if len(data) == 76800:
+        try:
+            logger.info("Converting raw 320x240 Grayscale to JPEG using OpenCV...")
+            gray_img = np.frombuffer(data, dtype=np.uint8).reshape((240, 320))
+            success, jpeg_data = cv2.imencode('.jpg', gray_img, [cv2.IMWRITE_JPEG_QUALITY, 95])
+            if success:
+                return bytes(jpeg_data)
+        except Exception as e:
+            logger.error(f"Failed to convert raw Grayscale to JPEG: {e}")
+            
+    # QVGA YUV422 (YUYV) = 320 * 240 * 2 = 153600 bytes
+    elif len(data) == 153600:
+        try:
+            logger.info("Converting raw 320x240 YUV422 to JPEG using OpenCV...")
+            arr = np.frombuffer(data, dtype=np.uint8).reshape((240, 320, 2))
+            
+            # Use OpenCV's native YUV422 (YUYV) to BGR conversion — correct for OV7670
+            bgr_img = cv2.cvtColor(arr, cv2.COLOR_YUV2BGR_YUYV)
+            
+            # --- Image enhancement pipeline for vivid plant photography ---
+            
+            # 1. Apply CLAHE (Contrast Limited Adaptive Histogram Equalization)
+            #    for adaptive contrast boost that matches the sensor's contrast=2 setting
+            lab = cv2.cvtColor(bgr_img, cv2.COLOR_BGR2LAB)
+            l_ch, a_ch, b_ch = cv2.split(lab)
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(4, 4))
+            l_ch = clahe.apply(l_ch)
+            lab = cv2.merge([l_ch, a_ch, b_ch])
+            bgr_img = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+            
+            # 2. Boost color saturation to match sensor's saturation=2 setting
+            #    (vivid greens for leaf photography)
+            hsv = cv2.cvtColor(bgr_img, cv2.COLOR_BGR2HSV).astype(np.float32)
+            hsv[:, :, 1] = np.clip(hsv[:, :, 1] * 1.4, 0, 255)  # 40% saturation boost
+            bgr_img = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR)
+            
+            # 3. Apply unsharp mask for crisp leaf detail
+            gaussian = cv2.GaussianBlur(bgr_img, (0, 0), 2.0)
+            bgr_img = cv2.addWeighted(bgr_img, 1.5, gaussian, -0.5, 0)
+            
+            success, jpeg_data = cv2.imencode('.jpg', bgr_img, [cv2.IMWRITE_JPEG_QUALITY, 95])
+            if success:
+                return bytes(jpeg_data)
+        except Exception as e:
+            logger.error(f"Failed to convert raw YUV422 to JPEG: {e}")
+
+    return data
+
+

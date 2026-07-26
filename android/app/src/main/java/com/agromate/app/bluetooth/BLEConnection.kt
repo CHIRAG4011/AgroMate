@@ -37,6 +37,7 @@ class BLEConnection(
 
         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
             if (status == BluetoothGatt.GATT_SUCCESS) {
+                gatt.requestMtu(512)
                 // Subscribe to notifications from cmdRx characteristic
                 val service = gatt.getService(serviceUuid)
                 val characteristic = service?.getCharacteristic(cmdRxUuid)
