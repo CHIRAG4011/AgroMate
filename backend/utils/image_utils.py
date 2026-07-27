@@ -220,26 +220,24 @@ def convert_raw_to_jpeg(data: bytes) -> bytes:
             # Use OpenCV's native YUV422 (YUYV) to BGR conversion — correct for OV7670
             bgr_img = cv2.cvtColor(arr, cv2.COLOR_YUV2BGR_YUYV)
             
-            # --- Image enhancement pipeline for vivid plant photography ---
+            # --- Gentle image enhancement for natural plant photography ---
             
-            # 1. Apply CLAHE (Contrast Limited Adaptive Histogram Equalization)
-            #    for adaptive contrast boost that matches the sensor's contrast=2 setting
+            # 1. Light CLAHE for adaptive contrast (gentle, not aggressive)
             lab = cv2.cvtColor(bgr_img, cv2.COLOR_BGR2LAB)
             l_ch, a_ch, b_ch = cv2.split(lab)
-            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(4, 4))
+            clahe = cv2.createCLAHE(clipLimit=1.5, tileGridSize=(8, 8))
             l_ch = clahe.apply(l_ch)
             lab = cv2.merge([l_ch, a_ch, b_ch])
             bgr_img = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
             
-            # 2. Boost color saturation to match sensor's saturation=2 setting
-            #    (vivid greens for leaf photography)
+            # 2. Gentle saturation boost (15% — natural-looking colors)
             hsv = cv2.cvtColor(bgr_img, cv2.COLOR_BGR2HSV).astype(np.float32)
-            hsv[:, :, 1] = np.clip(hsv[:, :, 1] * 1.4, 0, 255)  # 40% saturation boost
+            hsv[:, :, 1] = np.clip(hsv[:, :, 1] * 1.15, 0, 255)
             bgr_img = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR)
             
-            # 3. Apply unsharp mask for crisp leaf detail
-            gaussian = cv2.GaussianBlur(bgr_img, (0, 0), 2.0)
-            bgr_img = cv2.addWeighted(bgr_img, 1.5, gaussian, -0.5, 0)
+            # 3. Light unsharp mask for crisp detail (not aggressive)
+            gaussian = cv2.GaussianBlur(bgr_img, (0, 0), 1.5)
+            bgr_img = cv2.addWeighted(bgr_img, 1.3, gaussian, -0.3, 0)
             
             success, jpeg_data = cv2.imencode('.jpg', bgr_img, [cv2.IMWRITE_JPEG_QUALITY, 95])
             if success:
