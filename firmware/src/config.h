@@ -69,17 +69,12 @@
 #define MIC_I2S_WS 1        // Microphone Word Select / LRCLK
 #define AUDIO_I2S_SD_IN 46  // INMP441 serial data out → ESP32 data in
 
-// MAX98357A Amplifier (I2S TX)
-#define SPK_I2S_BCLK 2      // Speaker Bit Clock (shared pin)
-#define SPK_I2S_WS 1        // Speaker Word Select / LRCLK (shared pin)
-#define AUDIO_I2S_SD_OUT 3  // ESP32 data out → MAX98357A DIN
+// MAX98357A Amplifier (I2S TX - Valid ESP32-S3 Pins)
+#define SPK_I2S_BCLK 3      // Speaker Bit Clock (ESP32-S3 GPIO 3)
+#define SPK_I2S_WS 35       // Speaker Word Select / LRCLK (ESP32-S3 GPIO 35)
+#define AUDIO_I2S_SD_OUT 36 // ESP32-S3 data out → MAX98357A DIN (ESP32-S3 GPIO 36)
 #define AUDIO_SAMPLE_RATE 16000
 #define AUDIO_BUFFER_SIZE 1024
-
-// ── RGB LEDs (WS2812B) ──
-#define LED_PIN 26 // Dedicated GPIO for LED data (no conflicts)
-#define LED_COUNT 8
-#define LED_BRIGHTNESS 50
 
 // ── Buttons ──
 #define BTN_MODE 0 // BOOT button on DevKitC-1 (dedicated — no conflicts)
