@@ -217,29 +217,13 @@ def convert_raw_to_jpeg(data: bytes) -> bytes:
             logger.info("Converting raw 320x240 YUV422 to JPEG using OpenCV...")
             arr = np.frombuffer(data, dtype=np.uint8).reshape((240, 320, 2))
             
-            # Use OpenCV's native YUV422 (YUYV) to BGR conversion — correct for OV7670
+            # Clean YUV422 (YUYV) to BGR conversion — no enhancement needed.
+            # The OV7670 sensor produces clean output at neutral settings.
+            # Any post-processing (CLAHE, saturation boost, sharpening) amplifies
+            # the inherent noise of this low-cost sensor and degrades image quality.
             bgr_img = cv2.cvtColor(arr, cv2.COLOR_YUV2BGR_YUYV)
             
-            # --- Gentle image enhancement for natural plant photography ---
-            
-            # 1. Light CLAHE for adaptive contrast (gentle, not aggressive)
-            lab = cv2.cvtColor(bgr_img, cv2.COLOR_BGR2LAB)
-            l_ch, a_ch, b_ch = cv2.split(lab)
-            clahe = cv2.createCLAHE(clipLimit=1.5, tileGridSize=(8, 8))
-            l_ch = clahe.apply(l_ch)
-            lab = cv2.merge([l_ch, a_ch, b_ch])
-            bgr_img = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
-            
-            # 2. Gentle saturation boost (15% — natural-looking colors)
-            hsv = cv2.cvtColor(bgr_img, cv2.COLOR_BGR2HSV).astype(np.float32)
-            hsv[:, :, 1] = np.clip(hsv[:, :, 1] * 1.15, 0, 255)
-            bgr_img = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR)
-            
-            # 3. Light unsharp mask for crisp detail (not aggressive)
-            gaussian = cv2.GaussianBlur(bgr_img, (0, 0), 1.5)
-            bgr_img = cv2.addWeighted(bgr_img, 1.3, gaussian, -0.3, 0)
-            
-            success, jpeg_data = cv2.imencode('.jpg', bgr_img, [cv2.IMWRITE_JPEG_QUALITY, 95])
+            success, jpeg_data = cv2.imencode('.jpg', bgr_img, [cv2.IMWRITE_JPEG_QUALITY, 92])
             if success:
                 return bytes(jpeg_data)
         except Exception as e:

@@ -109,40 +109,27 @@ int CameraManager::begin() {
     pinMode(pin, INPUT_PULLUP);
   }
 
-  // ── OV7670 Sensor Tuning for Crisp Plant Photography ──
+  // ── OV7670 Sensor Settings — Neutral (matching clean reference output) ──
   sensor_t* s = esp_camera_sensor_get();
   if (s) {
-      // Brightness: 0 = neutral (avoid washed-out foggy look)
-      if (s->set_brightness)     s->set_brightness(s, 1);
+      // All adjustments at ZERO/neutral — the OV7670 defaults produce the cleanest output.
+      // Boosting contrast/saturation/sharpness on this sensor amplifies noise.
+      if (s->set_brightness)     s->set_brightness(s, 0);
+      if (s->set_contrast)       s->set_contrast(s, 0);
+      if (s->set_saturation)     s->set_saturation(s, 0);
 
-      // Contrast: +1 for clear outlines (avoid over-sharpened artifacts at +2)
-      if (s->set_contrast)       s->set_contrast(s, 1);
-
-      // Saturation: +1 for vivid greens without oversaturation
-      if (s->set_saturation)     s->set_saturation(s, 1);
-
-      // Auto White Balance: ON — essential for accurate leaf colors
+      // Auto White Balance ON for correct colors
       if (s->set_whitebal)       s->set_whitebal(s, 1);
       if (s->set_awb_gain)       s->set_awb_gain(s, 1);
 
-      // Auto Exposure Control: ON — lets camera adapt to lighting
+      // Auto Exposure + Auto Gain ON
       if (s->set_exposure_ctrl)  s->set_exposure_ctrl(s, 1);
-      if (s->set_aec2)           s->set_aec2(s, 1);        // Night mode AEC
-
-      // Auto Gain Control: ON — prevents dark/overexposed frames
       if (s->set_gain_ctrl)      s->set_gain_ctrl(s, 1);
-      if (s->set_gainceiling)    s->set_gainceiling(s, (gainceiling_t)6);  // x128 max gain
 
-      // Sharpness / Edge Enhancement
-      if (s->set_sharpness)      s->set_sharpness(s, 2);   // Max edge sharpness
-
-      // Denoise: light noise reduction without losing detail
-      if (s->set_denoise)        s->set_denoise(s, 1);
-
-      // Normal color mode (no sepia, negative, etc.)
+      // Normal color mode
       if (s->set_special_effect) s->set_special_effect(s, 0);
 
-      Serial.println("[Camera] OV7670 sensor tuned: AWB+AEC+AGC ON, sharpness=2, contrast=1, saturation=1");
+      Serial.println("[Camera] OV7670 sensor: neutral settings (AWB+AEC+AGC ON, no boost)");
   }
 
   _initialized = true;
