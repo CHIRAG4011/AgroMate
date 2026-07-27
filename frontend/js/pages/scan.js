@@ -390,25 +390,38 @@ async function autoTriggerScan() {
 }
 
 function generateShortTtsSummary(res) {
-  if (!res) return 'Scan complete';
-  const isHealthy = checkIsHealthy(res);
-  const plant = res.plant_name || 'plant';
+  if (!res) return 'The scan was completed but no results were returned. Please try again.';
   
-  if (scanMode === 'identify') {
-    const sci = res.scientific_name ? ` (scientific name: ${res.scientific_name})` : '';
-    return `Identified ${plant}${sci} with ${Math.round((parseFloat(res.confidence)||0.9)*100)} percent confidence.`;
+  const isHealthy = checkIsHealthy(res);
+  const plant = res.plant_name || 'Unknown Plant';
+  const sci = res.scientific_name || '';
+  const confidence = Math.round((parseFloat(res.confidence) || 0.9) * 100);
+  
+  let summary = `The scan was completed successfully. `;
+  summary += `The scanned plant is ${plant}`;
+  
+  if (sci) {
+    summary += `, its scientific name is ${sci}`;
   }
-
+  
+  summary += `. I have ${confidence} percent confidence about this plant. `;
+  
   if (isHealthy) {
-    return `The ${plant} appears healthy with no visible diseases or pests. Continue regular watering and maintenance.`;
+    summary += `We have not detected any disease or pest issues. Your plant looks healthy and in good condition. `;
+  } else {
+    const issue = res.disease_name || res.pest_name || res.primary_deficiency || 'an issue';
+    const severity = res.severity || 'moderate';
+    summary += `We have detected ${issue} with ${severity} severity. `;
+    
+    if (res.organic_treatment || res.treatment) {
+      const treatment = res.organic_treatment || res.treatment;
+      summary += `The recommended treatment is ${treatment}. `;
+    }
   }
-
-  const issue = res.disease_name || res.pest_name || res.primary_deficiency || 'disease';
-  const severity = res.severity || 'moderate';
-  const treatment = res.organic_treatment || res.treatment || '';
-  const treatText = treatment ? `. Recommended treatment: ${treatment}` : '';
-
-  return `${plant} diagnosed with ${issue}, severity ${severity}${treatText}.`;
+  
+  summary += `For more detailed information, please visit the app or web dashboard.`;
+  
+  return summary;
 }
 
 function toggleScanSpeech() {
