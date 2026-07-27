@@ -186,11 +186,9 @@ void yuv422_to_rgb565_fast(const uint8_t* yuv, uint16_t* rgb, int width, int hei
     }
 }
 
-// Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  Live Camera Scanning Preview & Capture
-// Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â
-//  Run Scan Preview Ã¢â‚¬â€ Simplified Scanning Screen
-// Ã¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€ÂÃ¢â€Â
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 void runScanPreview() {
     TFT_eSPI* tft = display.getTFT();
     tft->fillScreen(UI_BG);
@@ -204,19 +202,25 @@ void runScanPreview() {
     tft->drawString("AGROMATE VISION SCAN", SCREEN_WIDTH / 2, 56);
     
     tft->setTextColor(UI_CYAN, UI_BG);
-    tft->drawString("WARMING UP CAMERA...", SCREEN_WIDTH / 2, 120);
+    tft->drawString("SCANNING STARTED...", SCREEN_WIDTH / 2, 120);
     tft->setTextSize(1);
     tft->setTextColor(UI_WHITE, UI_BG);
     tft->drawString("Hold the camera steady near the plant", SCREEN_WIDTH / 2, 160);
     
     face.setExpression(Expression::SCANNING);
     
+    // ── VOICE: "Scan Started" ascending chime ──
+    audio.playScanStartTone();
+    
     // Reset diagnostic counters
     camera.warmupSuccessCount = 0;
     camera.warmupFailCount = 0;
     
-    // Warm up camera for 2 seconds Ã¢â‚¬â€ flush old frames, let auto-exposure adjust
+    // Warm up camera for 2 seconds — flush old frames, let auto-exposure adjust
+    // Play periodic progress beeps during warmup
     unsigned long startTime = millis();
+    unsigned long lastBeep = 0;
+    int progressDots = 0;
     while (millis() - startTime < 2000) {
         camera_fb_t* fb = camera.captureRaw();
         if (fb) {
@@ -225,6 +229,23 @@ void runScanPreview() {
         } else {
             camera.warmupFailCount++;
         }
+        
+        // Progress beep every 800ms
+        unsigned long elapsed = millis() - startTime;
+        if (elapsed - lastBeep >= 800) {
+            lastBeep = elapsed;
+            audio.playScanProgressBeep();
+            progressDots++;
+            // Update progress text on screen
+            String dots = "SCANNING";
+            for (int d = 0; d < (progressDots % 4); d++) dots += ".";
+            tft->fillRect(100, 108, SCREEN_WIDTH - 200, 24, UI_BG);
+            tft->setTextSize(2);
+            tft->setTextColor(UI_CYAN, UI_BG);
+            tft->setTextDatum(MC_DATUM);
+            tft->drawString(dots, SCREEN_WIDTH / 2, 120);
+        }
+        
         delay(50);
         ble.update();
     }
@@ -247,16 +268,22 @@ void runScanPreview() {
     uint8_t* finalJpg = camera.capture(&finalJpgSize);
     
     if (finalJpg && finalJpgSize > 0) {
-        // SUCCESS Ã¢â‚¬â€ show analyzing screen and send
+        // ── VOICE: "Scan Complete" success arpeggio ──
+        audio.playScanCompleteTone();
+        
+        // SUCCESS — show analyzing screen and send
         tft->fillScreen(UI_BG);
         tft->drawRoundRect(20, 40, SCREEN_WIDTH - 40, SCREEN_HEIGHT - 80, 8, UI_CYAN);
         tft->fillRect(21, 41, SCREEN_WIDTH - 42, 30, UI_DARK_BLUE);
         tft->setTextDatum(MC_DATUM);
         tft->setTextSize(2);
         tft->setTextColor(UI_WHITE, UI_DARK_BLUE);
-        tft->drawString("ANALYZING SCAN...", SCREEN_WIDTH / 2, 56);
+        tft->drawString("SCAN COMPLETED!", SCREEN_WIDTH / 2, 56);
         tft->setTextColor(UI_CYAN, UI_BG);
         tft->drawString("SENDING TO AI SERVER...", SCREEN_WIDTH / 2, 130);
+        tft->setTextSize(1);
+        tft->setTextColor(UI_WHITE, UI_BG);
+        tft->drawString("Analyzing your plant, please wait...", SCREEN_WIDTH / 2, 170);
         
         totalScanCount++;
         nvsPrefs.putUInt("scans", totalScanCount);
@@ -268,7 +295,10 @@ void runScanPreview() {
         // Switch back to face mode to prevent infinite scan loop
         currentScreen = ScreenMode::FACE;
     } else {
-        // FAILURE Ã¢â‚¬â€ show detailed diagnostic info on screen
+        // ── VOICE: Error tone (low descending) ──
+        audio.playTestTone(500);  // Short 500ms error buzz
+        
+        // FAILURE — show detailed diagnostic info on screen
         tft->fillScreen(UI_BG);
         tft->drawRoundRect(20, 20, SCREEN_WIDTH - 40, SCREEN_HEIGHT - 40, 8, UI_RED);
         tft->fillRect(21, 21, SCREEN_WIDTH - 42, 30, 0x8000); // Dark red header

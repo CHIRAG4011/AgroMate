@@ -248,3 +248,70 @@ void AudioManager::playTestTone(uint32_t durationMs) {
     // Switch back to mic mode
     _switchToMic();
 }
+
+// ── Helper: Play a single blocking tone ──
+void AudioManager::_playToneBlocking(float freqHz, uint32_t durationMs, float amplitude) {
+    uint32_t totalSamples = (AUDIO_SAMPLE_RATE * durationMs) / 1000;
+    const size_t chunkSamples = 256;
+    int16_t buffer[chunkSamples];
+    uint32_t written = 0;
+
+    while (written < totalSamples) {
+        size_t n = min((size_t)(totalSamples - written), chunkSamples);
+        for (size_t i = 0; i < n; i++) {
+            float t = (float)(written + i) / (float)AUDIO_SAMPLE_RATE;
+            buffer[i] = (int16_t)(amplitude * sinf(2.0f * M_PI * freqHz * t));
+        }
+        size_t bw = 0;
+        i2s_write(AUDIO_I2S_PORT, buffer, n * sizeof(int16_t), &bw, portMAX_DELAY);
+        written += n;
+    }
+}
+
+// ── Scan Started: Ascending 3-note chime (C5 → E5 → G5) ──
+void AudioManager::playScanStartTone() {
+    Serial.println("[Audio] Scan Start tone");
+    _switchToSpeaker();
+
+    _playToneBlocking(523.0f, 150);  // C5 - 150ms
+    _playToneBlocking(659.0f, 150);  // E5 - 150ms
+    _playToneBlocking(784.0f, 250);  // G5 - 250ms (longer final note)
+
+    // Flush
+    int16_t silence[64] = {0};
+    size_t d = 0;
+    i2s_write(AUDIO_I2S_PORT, silence, sizeof(silence), &d, portMAX_DELAY);
+
+    _switchToMic();
+}
+
+// ── Scan Progress: Short high-pitched beep ──
+void AudioManager::playScanProgressBeep() {
+    _switchToSpeaker();
+
+    _playToneBlocking(880.0f, 100, 8000.0f);  // A5 - 100ms, softer
+
+    int16_t silence[64] = {0};
+    size_t d = 0;
+    i2s_write(AUDIO_I2S_PORT, silence, sizeof(silence), &d, portMAX_DELAY);
+
+    _switchToMic();
+}
+
+// ── Scan Complete: Success arpeggio chime (C5 → E5 → G5 → C6) ──
+void AudioManager::playScanCompleteTone() {
+    Serial.println("[Audio] Scan Complete tone");
+    _switchToSpeaker();
+
+    _playToneBlocking(523.0f, 120);   // C5
+    _playToneBlocking(659.0f, 120);   // E5
+    _playToneBlocking(784.0f, 120);   // G5
+    _playToneBlocking(1047.0f, 350);  // C6 - long final high note
+
+    // Flush
+    int16_t silence[64] = {0};
+    size_t d = 0;
+    i2s_write(AUDIO_I2S_PORT, silence, sizeof(silence), &d, portMAX_DELAY);
+
+    _switchToMic();
+}

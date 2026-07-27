@@ -32,6 +32,11 @@ public:
     bool isPlaying() { return _playing; }
     float getPlaybackLevel();
 
+    // Scan voice feedback tones
+    void playScanStartTone();     // Ascending 3-note chime
+    void playScanProgressBeep();  // Short periodic beep
+    void playScanCompleteTone();  // Success arpeggio chime
+
 private:
     bool _recording = false;
     bool _playing = false;
@@ -54,4 +59,7 @@ private:
     void _switchToMic();
     void _switchToSpeaker();
     void _uninstallI2S();
+    
+    // Helper: play a single tone at given frequency for given duration
+    void _playToneBlocking(float freqHz, uint32_t durationMs, float amplitude = 12000.0f);
 };
