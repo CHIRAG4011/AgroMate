@@ -72,7 +72,7 @@ int CameraManager::begin() {
   config.pin_pwdn = -1;
   config.pin_reset = -1;
 
-  config.xclk_freq_hz = 20000000; // 20MHz — OV7670 optimal XCLK for sharp, well-timed frames
+  config.xclk_freq_hz = 10000000; // 10MHz — stable for this OV7670 module (20MHz causes green/pink lines)
   config.jpeg_quality = 10;       // Higher quality JPEG (lower = better quality)
 
 #ifdef BOARD_HAS_PSRAM
@@ -146,7 +146,7 @@ int CameraManager::begin() {
   }
 
   _initialized = true;
-  Serial.println("[Camera] OV7670 initialized OK (QVGA Color YUV422 @ 20MHz XCLK)");
+  Serial.println("[Camera] OV7670 initialized OK (QVGA Color YUV422 @ 10MHz XCLK)");
   return 0;
 }
 

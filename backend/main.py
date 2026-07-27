@@ -120,6 +120,30 @@ def _setup_ble_pipeline(server: BLEServer, logger):
             text = text[:max_len - 3].rsplit(' ', 1)[0] + '...'
         return text
 
+    def _resolve_is_healthy(scan_result: dict) -> bool:
+        """Determine if the plant is healthy based on scan result fields.
+        Handles the Python bool('false') == True gotcha from LLM string outputs."""
+        if not scan_result:
+            return True
+        
+        raw = scan_result.get("is_healthy", True)
+        # Handle string booleans from LLM JSON output
+        if isinstance(raw, str):
+            if raw.lower().strip() in ("false", "0", "no", "unhealthy"):
+                return False
+            return True
+        
+        # If disease/pest is named, it's NOT healthy regardless of is_healthy flag
+        disease = scan_result.get("disease_name", "").strip().lower()
+        pest = scan_result.get("pest_name", "").strip().lower()
+        deficiency = scan_result.get("primary_deficiency", "").strip().lower()
+        
+        none_indicators = {"", "none", "n/a", "healthy", "no disease", "no pest", "no deficiency"}
+        if disease not in none_indicators or pest not in none_indicators or deficiency not in none_indicators:
+            return False
+        
+        return bool(raw)
+
     async def on_image_received(robot, image_data):
         """Process image received from robot through AI pipeline."""
         logger.info(f"📸 Image received from {robot.name} ({len(image_data)} bytes)")
