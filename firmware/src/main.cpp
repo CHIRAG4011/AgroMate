@@ -1,4 +1,4 @@
-﻿/**
+/**
  * AgroMate ESP32-S3 Firmware Ã¢â‚¬â€ Production Build
  * 
  * Features:
@@ -38,17 +38,15 @@ int simple_vprintf(const char* fmt, va_list args) {
 #include "ble/BLEClient.h"
 #include "camera/CameraManager.h"
 #include "audio/AudioManager.h"
-#include "leds/LEDManager.h"
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ Global instances Ã¢â€â‚¬Ã¢â€â‚¬
+// Ã¢â€ â‚¬Ã¢â€ â‚¬ Global instances Ã¢â€ â‚¬Ã¢â€ â‚¬
 DisplayManager display;
 FaceRenderer face;
 AgroMateBLE ble;
 CameraManager camera;
 AudioManager audio;
-LEDManager leds;
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ Screen modes Ã¢â€â‚¬Ã¢â€â‚¬
+// Ã¢â€ â‚¬Ã¢â€ â‚¬ Screen modes Ã¢â€ â‚¬Ã¢â€ â‚¬
 enum class ScreenMode : uint8_t {
     BOOT = 0,
     FACE = 1,
@@ -124,7 +122,6 @@ bool weatherSynced = false;
 bool hwCameraOk = false;
 bool hwMicOk = false;
 bool hwSpeakerOk = false;
-bool hwLedsOk = false;
 bool hwBleOk = false;
 
 // Ã¢â€â‚¬Ã¢â€â‚¬ Color palette (matching FaceRenderer) Ã¢â€â‚¬Ã¢â€â‚¬
@@ -213,7 +210,6 @@ void runScanPreview() {
     tft->drawString("Hold the camera steady near the plant", SCREEN_WIDTH / 2, 160);
     
     face.setExpression(Expression::SCANNING);
-    leds.setPattern(LEDPattern::PULSE, CRGB::Green, 80);
     
     // Reset diagnostic counters
     camera.warmupSuccessCount = 0;
@@ -231,7 +227,6 @@ void runScanPreview() {
         }
         delay(50);
         ble.update();
-        leds.update();
     }
     
     // Show warm-up results on screen
@@ -269,7 +264,6 @@ void runScanPreview() {
         ble.sendImage(finalJpg, finalJpgSize);
         
         face.setExpression(Expression::THINKING);
-        leds.setPattern(LEDPattern::PULSE, CRGB::Cyan, 120);
         
         // Switch back to face mode to prevent infinite scan loop
         currentScreen = ScreenMode::FACE;
@@ -318,7 +312,6 @@ void runScanPreview() {
         tft->drawString("Press BOOT to dismiss", SCREEN_WIDTH / 2, 260);
         
         face.setExpression(Expression::ERROR);
-        leds.setPattern(LEDPattern::SOLID, CRGB::Red);
         
         // Wait for user to read the diagnostics (or 15 seconds)
         unsigned long errorTime = millis();
@@ -391,7 +384,6 @@ void handleBLECommand(uint8_t* data, size_t length) {
             }
             Serial.printf("[BLE] Starting recording for %u ms...\n", recordDurationMs);
             face.setExpression(Expression::LISTENING);
-            leds.setPattern(LEDPattern::PULSE, CRGB::Orange, 100);
             audio.startRecording(recordDurationMs);
             break;
         }
@@ -608,11 +600,6 @@ void drawDashboardStatic() {
     tft->setTextColor(UI_WHITE, UI_BG);
     tft->drawString("Speaker MAX98357A", cardX1 + 42, hwY + hwLineH * 2);
     
-    // LED status
-    tft->setTextColor(hwLedsOk ? UI_GREEN : UI_RED, UI_BG);
-    tft->drawString(hwLedsOk ? "[OK]" : "[XX]", cardX1 + 8, hwY + hwLineH * 3);
-    tft->setTextColor(UI_WHITE, UI_BG);
-    tft->drawString("LEDs WS2812B", cardX1 + 42, hwY + hwLineH * 3);
     
     // BLE status (drawn once, updated dynamically)
     tft->setTextColor(hwBleOk ? UI_GREEN : UI_RED, UI_BG);
@@ -1352,15 +1339,12 @@ void setup() {
     hwSpeakerOk = true;
     delay(150);
     
-    drawBootScreen(0.85f, "Syncing WS2812B Status LEDs...");
-    leds.begin();
-    hwLedsOk = true;
-    delay(150);
+    drawBootScreen(0.80f, "Testing speaker...");
+    audio.playTestTone(2000);  // 2-second 1kHz sine wave test tone
+    delay(200);
     
     drawBootScreen(1.0f, "AgroMate system ready!");
     delay(400);
-    
-    leds.setPattern(LEDPattern::SOLID, CRGB::Blue);
     
     // Draw the static home text screen as a splash screen
     drawHomeScreen();
@@ -1390,7 +1374,6 @@ void loop() {
     // System core updates
     ble.update();
     audio.update();
-    leds.update();
     
     // Heartbeats and battery updates to BLE center
     static unsigned long lastHeartbeat = 0;
@@ -1416,10 +1399,8 @@ void loop() {
             Serial.printf("[AUDIO] Transmitting recorded audio (%u bytes) over BLE...\n", audioSize);
             ble.sendAudio(audioData, audioSize);
             face.setExpression(Expression::THINKING);
-            leds.setPattern(LEDPattern::BLINK, CRGB::Cyan, 150);
         } else {
             face.setExpression(Expression::ERROR);
-            leds.setPattern(LEDPattern::SOLID, CRGB::Red);
         }
     }
     lastAudioRecording = currentAudioRecording;
@@ -1437,11 +1418,9 @@ void loop() {
     if (audio.isPlaying()) {
         face.setExpression(Expression::TALKING);
         face.setMouthOpenness(audio.getPlaybackLevel() * 1.5f);
-        leds.setPattern(LEDPattern::PULSE, CRGB::Green, 120);
     } else if (face.getExpression() == Expression::TALKING) {
         face.setExpression(Expression::IDLE);
         face.setMouthOpenness(0.0f);
-        leds.setPattern(LEDPattern::SOLID, CRGB::Blue);
     }
     
     // FPS computation

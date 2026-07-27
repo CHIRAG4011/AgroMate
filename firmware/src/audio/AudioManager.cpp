@@ -1,22 +1,20 @@
 /**
- * AgroMate Audio Manager Implementation — Time-Multiplexed I2S
+ * AgroMate Audio Manager Implementation — Dedicated I2S Bus Setup
  * 
- * INMP441 (mic) and MAX98357A (speaker) share a single I2S bus:
- *   - BCLK = GPIO 2 (shared between mic and speaker)
- *   - WS   = GPIO 1 (shared between mic and speaker)
- *   - SD_IN  = GPIO 46 (INMP441 data → ESP32)
- *   - SD_OUT = GPIO 3  (ESP32 → MAX98357A DIN)
+ * INMP441 (mic) and MAX98357A (speaker) use separate dedicated pins:
+ *   - Mic: SCK = GPIO 2, WS = GPIO 1, SD_IN = GPIO 46
+ *   - Speaker: BCLK = GPIO 3, WS = GPIO 35, SD_OUT = GPIO 36
  * 
- * The I2S driver is uninstalled and reinstalled when switching between
- * RX (microphone) and TX (speaker) modes to avoid bus conflicts.
+ * The I2S driver switches between RX (microphone) and TX (speaker) modes.
  */
 
 #include "AudioManager.h"
+#include <math.h>
 
 void AudioManager::begin() {
-    // Start I2S in mic mode to stabilize shared clocks/buses (fixes camera line corruption)
+    // Start I2S in mic mode to stabilize shared clocks/buses
     _switchToMic();
-    Serial.println("[Audio] Time-multiplexed I2S clocks stabilized (mic & speaker disabled)");
+    Serial.println("[Audio] I2S audio manager initialized");
 }
 
 void AudioManager::_switchToMic() {
@@ -165,20 +163,47 @@ void AudioManager::update() {
 }
 
 void AudioManager::startRecording(uint32_t durationMs) {
-    // Microphone recording fully removed
+    if (_recording) return;
+
+    _switchToMic();
+
+    size_t bufSize = AUDIO_SAMPLE_RATE * 2 * (durationMs / 1000 + 1);
+    if (_recordBuffer) free(_recordBuffer);
+    _recordBuffer = (uint8_t*)malloc(bufSize);
+    if (!_recordBuffer) {
+        Serial.println("[Audio] Failed to allocate recording buffer");
+        return;
+    }
+
+    _recordDuration = durationMs;
+    _recordPos = 0;
+    _recordSize = 0;
+    _recordStart = millis();
+    _recording = true;
+    Serial.printf("[Audio] Recording started (%u ms)\n", durationMs);
 }
 
 void AudioManager::stopRecording() {
     _recording = false;
+    _recordSize = _recordPos;
 }
 
 uint8_t* AudioManager::getRecordedData(size_t* outSize) {
-    *outSize = 0;
-    return nullptr;
+    *outSize = _recordSize;
+    return _recordBuffer;
 }
 
 void AudioManager::playBuffer(uint8_t* data, size_t length) {
-    // Speaker playback fully removed
+    if (!data || length == 0) return;
+    
+    _switchToSpeaker();
+
+    _playBuffer = data;
+    _playSize = length;
+    _playPos = 0;
+    _playing = true;
+    _playLevel = 0;
+    Serial.printf("[Audio] Playing buffer: %u bytes\n", length);
 }
 
 float AudioManager::getPlaybackLevel() {
@@ -186,5 +211,40 @@ float AudioManager::getPlaybackLevel() {
 }
 
 void AudioManager::playTestTone(uint32_t durationMs) {
-    // Speaker verification tone fully removed
+    Serial.println("[Audio] Playing test tone...");
+
+    _switchToSpeaker();
+
+    // Generate a 1kHz sine wave test tone at 16-bit, 16kHz sample rate
+    const float frequency = 1000.0f;  // 1 kHz
+    const float amplitude = 16000.0f; // ~50% volume (max is 32767)
+    uint32_t totalSamples = (AUDIO_SAMPLE_RATE * durationMs) / 1000;
+    
+    // Process in chunks to avoid large memory allocation
+    const size_t chunkSamples = 256;
+    int16_t buffer[chunkSamples];
+    uint32_t samplesWritten = 0;
+
+    while (samplesWritten < totalSamples) {
+        size_t samplesToGen = min((size_t)(totalSamples - samplesWritten), chunkSamples);
+        
+        for (size_t i = 0; i < samplesToGen; i++) {
+            float t = (float)(samplesWritten + i) / (float)AUDIO_SAMPLE_RATE;
+            buffer[i] = (int16_t)(amplitude * sinf(2.0f * M_PI * frequency * t));
+        }
+
+        size_t bytesWritten = 0;
+        i2s_write(AUDIO_I2S_PORT, buffer, samplesToGen * sizeof(int16_t), &bytesWritten, portMAX_DELAY);
+        samplesWritten += samplesToGen;
+    }
+
+    // Small silence gap at the end to flush DMA buffers
+    memset(buffer, 0, sizeof(buffer));
+    size_t dummy = 0;
+    i2s_write(AUDIO_I2S_PORT, buffer, sizeof(buffer), &dummy, portMAX_DELAY);
+
+    Serial.printf("[Audio] Test tone complete (%u ms, %u samples)\n", durationMs, totalSamples);
+
+    // Switch back to mic mode
+    _switchToMic();
 }
