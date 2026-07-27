@@ -280,6 +280,17 @@ def _setup_ble_pipeline(server: BLEServer, logger):
         if not is_healthy:
             await server.send_disease_notify(robot.robot_id)
 
+        # Build full natural voice response paragraph
+        response_text = f"The scan was completed. The scanned plant is {common_name}"
+        if scientific_name and scientific_name != "N/A":
+            response_text += f", its scientific name is {scientific_name}"
+        response_text += f". I have {int(confidence)} percent confidence about this plant. "
+        if is_healthy:
+            response_text += "We have not detected any disease or pest issues. Your plant looks healthy. "
+        else:
+            response_text += f"We have detected {issue}. "
+        response_text += "For more detailed information, visit the app or web dashboard."
+
         # Store scan in database immediately
         try:
             from .database.crud import get_session, create_scan, create_diagnosis, get_robot_by_id
@@ -294,8 +305,7 @@ def _setup_ble_pipeline(server: BLEServer, logger):
                     user_id=None,
                     robot_id=db_robot_id
                 )
-                if auto_result or scan_context:
-                    # Resolve values from scan_context or auto_result
+                if scan_context:
                     disease_name_val = scan_context.get("disease_name") or scan_context.get("issue_detected") or issue
                     severity_val = scan_context.get("severity") or "none"
                     treatment_val = scan_context.get("treatment") or ""
@@ -340,14 +350,25 @@ def _setup_ble_pipeline(server: BLEServer, logger):
         except Exception as e:
             logger.error(f"Database save or WebSocket broadcast failed: {e}")
 
-        # Generate and send speech in the background (Non-blocking!)
+        # Resolve robot language setting
+        lang = "en"
+        if hasattr(robot, "config") and isinstance(robot.config, dict):
+            lang = robot.config.get("language", "en")
+
+        # Generate and send speech in the background using ElevenLabs/Gemini/Edge-TTS
         async def speak_in_background():
             try:
                 from .voice.synthesizer import VoiceSynthesizer
                 synthesizer = VoiceSynthesizer()
                 await synthesizer.initialize()
-                speech = await synthesizer.synthesize(response_text, language=lang, compress_for_robot=True)
-                if speech:
+                speech = await synthesizer.synthesize(
+                    response_text,
+                    language=lang,
+                    compress_for_robot=True,
+                    engine="elevenlabs"
+                )
+                if speech and speech.audio_data:
+                    logger.info(f"🔊 Sending speech audio ({len(speech.audio_data)} bytes, {speech.voice_used}) to robot {robot.name}...")
                     await server.send_speech_audio(robot.robot_id, speech.audio_data)
             except Exception as se:
                 logger.error(f"Background speech synthesis failed: {se}")

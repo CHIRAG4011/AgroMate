@@ -209,17 +209,13 @@ void runScanPreview() {
     
     face.setExpression(Expression::SCANNING);
     
-    // ── VOICE: "Scan Started" ascending chime ──
-    audio.playScanStartTone();
-    
     // Reset diagnostic counters
     camera.warmupSuccessCount = 0;
     camera.warmupFailCount = 0;
     
     // Warm up camera for 2 seconds — flush old frames, let auto-exposure adjust
-    // Play periodic progress beeps during warmup
     unsigned long startTime = millis();
-    unsigned long lastBeep = 0;
+    unsigned long lastDotUpdate = 0;
     int progressDots = 0;
     while (millis() - startTime < 2000) {
         camera_fb_t* fb = camera.captureRaw();
@@ -230,13 +226,11 @@ void runScanPreview() {
             camera.warmupFailCount++;
         }
         
-        // Progress beep every 800ms
+        // Update progress text on screen
         unsigned long elapsed = millis() - startTime;
-        if (elapsed - lastBeep >= 800) {
-            lastBeep = elapsed;
-            audio.playScanProgressBeep();
+        if (elapsed - lastDotUpdate >= 500) {
+            lastDotUpdate = elapsed;
             progressDots++;
-            // Update progress text on screen
             String dots = "SCANNING";
             for (int d = 0; d < (progressDots % 4); d++) dots += ".";
             tft->fillRect(100, 108, SCREEN_WIDTH - 200, 24, UI_BG);
@@ -268,9 +262,6 @@ void runScanPreview() {
     uint8_t* finalJpg = camera.capture(&finalJpgSize);
     
     if (finalJpg && finalJpgSize > 0) {
-        // ── VOICE: "Scan Complete" success arpeggio ──
-        audio.playScanCompleteTone();
-        
         // SUCCESS — show analyzing screen and send
         tft->fillScreen(UI_BG);
         tft->drawRoundRect(20, 40, SCREEN_WIDTH - 40, SCREEN_HEIGHT - 80, 8, UI_CYAN);

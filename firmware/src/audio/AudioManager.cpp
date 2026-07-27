@@ -155,6 +155,10 @@ void AudioManager::update() {
         } else {
             _playing = false;
             _playLevel = 0;
+            if (_playBuffer) {
+                free(_playBuffer);
+                _playBuffer = nullptr;
+            }
             Serial.println("[Audio] Playback complete");
             // Switch back to mic mode (ready for next recording)
             _switchToMic();
@@ -198,12 +202,24 @@ void AudioManager::playBuffer(uint8_t* data, size_t length) {
     
     _switchToSpeaker();
 
-    _playBuffer = data;
+    // Free any previous play buffer if still allocated
+    if (_playBuffer) {
+        free(_playBuffer);
+        _playBuffer = nullptr;
+    }
+
+    _playBuffer = (uint8_t*)malloc(length);
+    if (!_playBuffer) {
+        Serial.println("[Audio] Failed to allocate playBuffer heap memory!");
+        return;
+    }
+
+    memcpy(_playBuffer, data, length);
     _playSize = length;
     _playPos = 0;
     _playing = true;
     _playLevel = 0;
-    Serial.printf("[Audio] Playing buffer: %u bytes\n", length);
+    Serial.printf("[Audio] Playing speech audio buffer: %u bytes\n", length);
 }
 
 float AudioManager::getPlaybackLevel() {

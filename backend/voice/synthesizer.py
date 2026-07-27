@@ -176,16 +176,19 @@ class VoiceSynthesizer:
         
         result = None
 
-        # Check if Gemini or ElevenLabs engine is requested and Gemini is available
-        if (engine == "elevenlabs" or engine == "gemini") and self.settings.gemini_api_key:
+        # Priority 1: ElevenLabs engine (if explicitly requested or if ElevenLabs API key is present)
+        if (engine == "elevenlabs" or (engine == "auto" and self.settings.elevenlabs_api_key)) and self.settings.elevenlabs_api_key:
+            el_voice = voice or self.settings.elevenlabs_voice_id or ("EXAVITQu4vr4xnSDxMaL" if gender == "female" else "pNInz6obpgHs517G4SMt")
+            result = await self._synthesize_elevenlabs(text, el_voice, language)
+
+        # Priority 2: Gemini engine
+        if not result and (engine == "gemini" or self.settings.gemini_api_key) and self.settings.gemini_api_key:
             voice_name = voice or ("Kore" if gender == "female" else "Puck")
             result = await self._synthesize_gemini(text, voice_name, language)
 
-        # Check if ElevenLabs engine is requested and available (if not already synthesized by Gemini fallback)
-        if not result and engine == "elevenlabs" and self.settings.elevenlabs_api_key:
-            el_voice = voice
-            if not el_voice:
-                el_voice = self.settings.elevenlabs_voice_id or ("EXAVITQu4vr4xnSDxMaL" if gender == "female" else "pNInz6obpgHs517G4SMt")
+        # Priority 3: ElevenLabs fallback
+        if not result and self.settings.elevenlabs_api_key:
+            el_voice = voice or self.settings.elevenlabs_voice_id or ("EXAVITQu4vr4xnSDxMaL" if gender == "female" else "pNInz6obpgHs517G4SMt")
             result = await self._synthesize_elevenlabs(text, el_voice, language)
 
         # Try Edge-TTS
