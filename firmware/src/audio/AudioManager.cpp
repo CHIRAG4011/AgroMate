@@ -68,13 +68,12 @@ void AudioManager::_switchToSpeaker() {
     spkConfig.mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX);
     spkConfig.sample_rate = AUDIO_SAMPLE_RATE;
     spkConfig.bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT;
-    // ALL_LEFT duplicates mono data to BOTH L+R I2S slots.
-    // ONLY_LEFT sends silence in the R slot, halving effective volume
-    // and causing buzzing artifacts on MAX98357A.
-    spkConfig.channel_format = I2S_CHANNEL_FMT_ALL_LEFT;
+    // Standard I2S stereo format (RIGHT_LEFT) for MAX98357A DAC.
+    // Mono samples are duplicated to both L+R slots to eliminate buzzing artifacts.
+    spkConfig.channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT;
     spkConfig.communication_format = I2S_COMM_FORMAT_STAND_I2S;
     spkConfig.intr_alloc_flags = ESP_INTR_FLAG_LEVEL1;
-    spkConfig.dma_buf_count = 16;         // More DMA buffers for smoother playback
+    spkConfig.dma_buf_count = 16;
     spkConfig.dma_buf_len = AUDIO_BUFFER_SIZE;
     spkConfig.use_apll = false;
     spkConfig.tx_desc_auto_clear = true;
@@ -215,19 +214,36 @@ void AudioManager::_drainRingToI2S(size_t maxBytes) {
     if (_ringCount == 0 || _currentMode != AudioMode::SPEAKER_ACTIVE) return;
 
     size_t toWrite = min(maxBytes, (size_t)_ringCount);
+    toWrite &= ~1; // 16-bit sample aligned
+    if (toWrite == 0) return;
+
     size_t chunk1 = min(toWrite, STREAM_RING_SIZE - _ringTail);
+    chunk1 &= ~1;
+    if (chunk1 == 0) return;
+
+    int16_t* monoSamples = (int16_t*)(_ringBuffer + _ringTail);
+    size_t numSamples = min((size_t)256, chunk1 / 2);
+    int16_t stereoBuf[512];
+
+    for (size_t i = 0; i < numSamples; i++) {
+        stereoBuf[i * 2]     = monoSamples[i];
+        stereoBuf[i * 2 + 1] = monoSamples[i];
+    }
 
     size_t bytesWritten = 0;
-    i2s_write(AUDIO_I2S_PORT, _ringBuffer + _ringTail, chunk1, &bytesWritten, 10);
-    _ringTail = (_ringTail + bytesWritten) % STREAM_RING_SIZE;
-    _ringCount -= bytesWritten;
+    i2s_write(AUDIO_I2S_PORT, stereoBuf, numSamples * 4, &bytesWritten, 10);
 
-    if (bytesWritten >= 2) {
-        int16_t* samples = (int16_t*)(_ringBuffer + _ringTail);
+    size_t monoConsumed = (bytesWritten / 4) * 2;
+    if (monoConsumed > 0) {
+        _ringTail = (_ringTail + monoConsumed) % STREAM_RING_SIZE;
+        _ringCount -= monoConsumed;
+    }
+
+    if (numSamples > 0) {
         int32_t sum = 0;
-        size_t sampleCount = min((size_t)64, bytesWritten / 2);
+        size_t sampleCount = min((size_t)64, numSamples);
         for (size_t s = 0; s < sampleCount; s++) {
-            sum += abs(samples[s]);
+            sum += abs(monoSamples[s]);
         }
         _playLevel = (float)sum / sampleCount / 32768.0f;
     }
@@ -283,58 +299,26 @@ float AudioManager::getPlaybackLevel() {
 
 void AudioManager::playTestTone(uint32_t durationMs) {
     Serial.println("[Audio] Playing test tone...");
-
-    _switchToSpeaker();
-
-    // Generate a 1kHz sine wave test tone at 16-bit, 16kHz sample rate
-    const float frequency = 1000.0f;  // 1 kHz
-    const float amplitude = 16000.0f; // ~50% volume (max is 32767)
-    uint32_t totalSamples = (AUDIO_SAMPLE_RATE * durationMs) / 1000;
-    
-    // Process in chunks to avoid large memory allocation
-    const size_t chunkSamples = 256;
-    int16_t buffer[chunkSamples];
-    uint32_t samplesWritten = 0;
-
-    while (samplesWritten < totalSamples) {
-        size_t samplesToGen = min((size_t)(totalSamples - samplesWritten), chunkSamples);
-        
-        for (size_t i = 0; i < samplesToGen; i++) {
-            float t = (float)(samplesWritten + i) / (float)AUDIO_SAMPLE_RATE;
-            buffer[i] = (int16_t)(amplitude * sinf(2.0f * M_PI * frequency * t));
-        }
-
-        size_t bytesWritten = 0;
-        i2s_write(AUDIO_I2S_PORT, buffer, samplesToGen * sizeof(int16_t), &bytesWritten, portMAX_DELAY);
-        samplesWritten += samplesToGen;
-    }
-
-    // Small silence gap at the end to flush DMA buffers
-    memset(buffer, 0, sizeof(buffer));
-    size_t dummy = 0;
-    i2s_write(AUDIO_I2S_PORT, buffer, sizeof(buffer), &dummy, portMAX_DELAY);
-
-    Serial.printf("[Audio] Test tone complete (%u ms, %u samples)\n", durationMs, totalSamples);
-
-    // Switch back to mic mode
-    _switchToMic();
+    _playToneBlocking(1000.0f, durationMs, 16000.0f);
 }
 
-// ── Helper: Play a single blocking tone ──
+// ── Helper: Play a single blocking tone (Stereo I2S) ──
 void AudioManager::_playToneBlocking(float freqHz, uint32_t durationMs, float amplitude) {
     uint32_t totalSamples = (AUDIO_SAMPLE_RATE * durationMs) / 1000;
     const size_t chunkSamples = 256;
-    int16_t buffer[chunkSamples];
+    int16_t stereoBuf[chunkSamples * 2];
     uint32_t written = 0;
 
     while (written < totalSamples) {
         size_t n = min((size_t)(totalSamples - written), chunkSamples);
         for (size_t i = 0; i < n; i++) {
             float t = (float)(written + i) / (float)AUDIO_SAMPLE_RATE;
-            buffer[i] = (int16_t)(amplitude * sinf(2.0f * M_PI * freqHz * t));
+            int16_t sample = (int16_t)(amplitude * sinf(2.0f * M_PI * freqHz * t));
+            stereoBuf[i * 2]     = sample;
+            stereoBuf[i * 2 + 1] = sample;
         }
         size_t bw = 0;
-        i2s_write(AUDIO_I2S_PORT, buffer, n * sizeof(int16_t), &bw, portMAX_DELAY);
+        i2s_write(AUDIO_I2S_PORT, stereoBuf, n * 4, &bw, portMAX_DELAY);
         written += n;
     }
 }
@@ -343,38 +327,44 @@ void AudioManager::_playToneBlocking(float freqHz, uint32_t durationMs, float am
 void AudioManager::playScanProgressBeep() {
     _switchToSpeaker();
 
-    _playToneBlocking(880.0f, 100, 24000.0f);  // A5 - 100ms, loud
+    _playToneBlocking(880.0f, 80, 16000.0f);  // A5 - 80ms, clean tone
 
-    int16_t silence[64] = {0};
+    int16_t silence[128] = {0};
     size_t d = 0;
     i2s_write(AUDIO_I2S_PORT, silence, sizeof(silence), &d, portMAX_DELAY);
 
     _switchToMic();
 }
 
-// ── Play pre-recorded PCM from PROGMEM flash ──
+// ── Play pre-recorded PCM from PROGMEM flash (Stereo I2S) ──
 void AudioManager::playPcmFromProgmem(const uint8_t* data, size_t length) {
     Serial.printf("[Audio] Playing PROGMEM voice clip (%u bytes, %.1fs)\n", length, (float)length / 32000.0f);
     _switchToSpeaker();
 
-    const size_t CHUNK = 512;  // Read 512 bytes at a time from flash
-    uint8_t buf[CHUNK];
+    const size_t MONO_CHUNK = 512;  // Read 512 bytes (256 samples) from flash
+    int16_t monoBuf[256];
+    int16_t stereoBuf[512];        // 1024 bytes stereo
     size_t pos = 0;
 
     while (pos < length) {
-        size_t toRead = min(CHUNK, length - pos);
-        // Read from PROGMEM (flash) into RAM buffer
-        memcpy_P(buf, data + pos, toRead);
+        size_t toRead = min(MONO_CHUNK, length - pos);
+        toRead &= ~1;
+        memcpy_P(monoBuf, data + pos, toRead);
         
+        size_t numSamples = toRead / 2;
+        for (size_t i = 0; i < numSamples; i++) {
+            stereoBuf[i * 2]     = monoBuf[i];
+            stereoBuf[i * 2 + 1] = monoBuf[i];
+        }
+
         size_t bw = 0;
-        i2s_write(AUDIO_I2S_PORT, buf, toRead, &bw, portMAX_DELAY);
+        i2s_write(AUDIO_I2S_PORT, stereoBuf, numSamples * 4, &bw, portMAX_DELAY);
         pos += toRead;
     }
 
-    // Flush DMA buffers with silence
-    memset(buf, 0, CHUNK);
+    memset(stereoBuf, 0, sizeof(stereoBuf));
     size_t d = 0;
-    i2s_write(AUDIO_I2S_PORT, buf, CHUNK, &d, portMAX_DELAY);
+    i2s_write(AUDIO_I2S_PORT, stereoBuf, sizeof(stereoBuf), &d, portMAX_DELAY);
 
     Serial.println("[Audio] Voice clip complete");
     _switchToMic();

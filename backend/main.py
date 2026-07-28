@@ -273,23 +273,22 @@ def _setup_ble_pipeline(server: BLEServer, logger):
 
         expression = FaceExpression.HAPPY if is_healthy else FaceExpression.WARNING
 
-        # Build the spoken result paragraph for TTS
+        # Build concise, clear spoken text for speech synthesis
         conf_pct = int(confidence) if confidence else 0
-        response_text = f"The scan was completed successfully. The scanned plant is {common_name}"
+        response_text = f"Scan complete. The scanned plant is {common_name}"
         if scientific_name and scientific_name != "N/A":
-            response_text += f", its scientific name is {scientific_name}"
-        response_text += f". I have {conf_pct} percent confidence about this plant. "
+            response_text += f", scientific name {scientific_name}"
+        response_text += f", with {conf_pct} percent confidence. "
         if is_healthy:
-            response_text += "We have not detected any disease or pest issues. Your plant looks healthy and in good condition. "
+            response_text += "No diseases detected. Your plant looks healthy!"
         else:
-            response_text += f"We have detected {issue}. "
-            severity_val = scan_context.get("severity", "moderate") if scan_context else "moderate"
-            response_text += f"The severity is {severity_val}. "
+            response_text += f"Detected {issue}. "
             treatment_val = scan_context.get("organic_treatment", "") or scan_context.get("treatment", "")
             if treatment_val:
-                response_text += f"The recommended treatment is {treatment_val}. "
-        response_text += "For more detailed information, please visit the app or web dashboard."
-        logger.info(f"🗣️ TTS response: {response_text[:100]}...")
+                first_tip = treatment_val.split(';')[0]
+                response_text += f"Recommended treatment: {first_tip}. "
+        response_text += "Visit the app for details."
+        logger.info(f"🗣️ TTS response: {response_text}")
 
         # Get robot language for TTS
         lang = robot.config.get("language", "en") if hasattr(robot, 'config') and robot.config else "en"
@@ -297,11 +296,26 @@ def _setup_ble_pipeline(server: BLEServer, logger):
         # Send structured data to the robot display
         await server.send_ai_response(robot.robot_id, display_text, expression)
         
+        # Start speech synthesis & BLE streaming IMMEDIATELY in background (zero delay!)
+        async def speak_in_background():
+            try:
+                from .voice.synthesizer import VoiceSynthesizer
+                synthesizer = VoiceSynthesizer()
+                await synthesizer.initialize()
+                speech = await synthesizer.synthesize(response_text, language=lang, compress_for_robot=True)
+                if speech:
+                    logger.info(f"🔊 Sending {len(speech.audio_data)} bytes of speech to robot...")
+                    await server.send_speech_audio(robot.robot_id, speech.audio_data)
+            except Exception as se:
+                logger.error(f"Background speech synthesis failed: {se}")
+
+        asyncio.create_task(speak_in_background())
+
         # Notify robot to increment disease counter if not healthy
         if not is_healthy:
             await server.send_disease_notify(robot.robot_id)
 
-        # Store scan in database immediately
+        # Store scan in database & broadcast to frontend in parallel
         try:
             from .database.crud import get_session, create_scan, create_diagnosis, get_robot_by_id
             async with await get_session() as session:
@@ -316,7 +330,6 @@ def _setup_ble_pipeline(server: BLEServer, logger):
                     robot_id=db_robot_id
                 )
                 if auto_result or scan_context:
-                    # Resolve values from scan_context or auto_result
                     disease_name_val = scan_context.get("disease_name") or scan_context.get("issue_detected") or issue
                     severity_val = scan_context.get("severity") or "none"
                     treatment_val = scan_context.get("treatment") or ""
@@ -333,7 +346,6 @@ def _setup_ble_pipeline(server: BLEServer, logger):
                         organic_treatment=organic_val,
                     )
                 
-                # Broadcast via websocket to any connected frontends instantly
                 from .api.websocket import ws_manager
                 message = {
                     "type": "scan_complete",
@@ -350,7 +362,6 @@ def _setup_ble_pipeline(server: BLEServer, logger):
                 await ws_manager.broadcast("robot:all", message)
                 await ws_manager.broadcast(f"robot:{robot.robot_id}", message)
 
-                # Fetch updated 30-day stats from database and sync to the robot's local display
                 from .database.crud import get_analytics_summary
                 summary = await get_analytics_summary(session, days=30)
                 if summary:
@@ -360,20 +371,6 @@ def _setup_ble_pipeline(server: BLEServer, logger):
                     logger.info(f"📊 Synced post-scan stats to robot: {robot.name} (Scans={total_scans}, Diseases={total_diagnoses})")
         except Exception as e:
             logger.error(f"Database save or WebSocket broadcast failed: {e}")
-
-        # Generate and send speech in the background (Non-blocking!)
-        async def speak_in_background():
-            try:
-                from .voice.synthesizer import VoiceSynthesizer
-                synthesizer = VoiceSynthesizer()
-                await synthesizer.initialize()
-                speech = await synthesizer.synthesize(response_text, language=lang, compress_for_robot=True)
-                if speech:
-                    await server.send_speech_audio(robot.robot_id, speech.audio_data)
-            except Exception as se:
-                logger.error(f"Background speech synthesis failed: {se}")
-
-        asyncio.create_task(speak_in_background())
 
     async def on_audio_received(robot, audio_data):
         """Process audio received from robot — speech recognition pipeline."""
