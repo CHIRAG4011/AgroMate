@@ -118,31 +118,27 @@ def resample_audio(
     sample_width: int = SAMPLE_WIDTH,
 ) -> bytes:
     """
-    Resample audio to target sample rate using linear interpolation.
-
-    Args:
-        pcm_data: Raw PCM audio data
-        original_rate: Original sample rate
-        target_rate: Target sample rate
-        sample_width: Bytes per sample
-
-    Returns:
-        Resampled PCM data
+    Resample audio to target sample rate using high-quality polyphase filtering.
     """
-    if original_rate == target_rate:
+    if original_rate == target_rate or not pcm_data:
         return pcm_data
 
-    # Convert to numpy
     dtype = np.int16 if sample_width == 2 else np.int8
     samples = np.frombuffer(pcm_data, dtype=dtype).astype(np.float32)
 
-    # Calculate ratio
-    ratio = target_rate / original_rate
-    new_length = int(len(samples) * ratio)
-
-    # Linear interpolation
-    indices = np.linspace(0, len(samples) - 1, new_length)
-    resampled = np.interp(indices, np.arange(len(samples)), samples)
+    try:
+        from scipy.signal import resample_poly
+        import math
+        gcd = math.gcd(target_rate, original_rate)
+        up = target_rate // gcd
+        down = original_rate // gcd
+        resampled = resample_poly(samples, up, down)
+    except Exception as e:
+        logger.warning(f"resample_poly failed: {e}, falling back to interpolation")
+        ratio = target_rate / original_rate
+        new_length = int(len(samples) * ratio)
+        indices = np.linspace(0, len(samples) - 1, new_length)
+        resampled = np.interp(indices, np.arange(len(samples)), samples)
 
     return resampled.astype(dtype).tobytes()
 

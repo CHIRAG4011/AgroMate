@@ -169,7 +169,7 @@ void AudioManager::update() {
         }
 
         if (_ringCount > 0) {
-            _drainRingToI2S(1024);
+            _drainRingToI2S(256);
         } else if (_streamFinished) {
             _streamActive = false;
             _streamFinished = false;
@@ -193,14 +193,17 @@ void AudioManager::startAudioStream() {
 }
 
 void AudioManager::writeAudioStream(const uint8_t* data, size_t length) {
-    if (!data || length == 0 || !_streamActive) return;
+    if (!data || length < 2 || !_streamActive) return;
 
-    for (size_t i = 0; i < length; i++) {
-        if (_ringCount >= STREAM_RING_SIZE) {
-            _drainRingToI2S(512);
+    size_t sampleCount = length / 2;
+    const int16_t* incomingSamples = (const int16_t*)data;
+
+    for (size_t i = 0; i < sampleCount; i++) {
+        if (_ringCount >= STREAM_RING_SAMPLES) {
+            _drainRingToI2S(256);
         }
-        _ringBuffer[_ringHead] = data[i];
-        _ringHead = (_ringHead + 1) % STREAM_RING_SIZE;
+        _ringBuffer[_ringHead] = incomingSamples[i];
+        _ringHead = (_ringHead + 1) % STREAM_RING_SAMPLES;
         _ringCount++;
     }
 }
@@ -210,42 +213,39 @@ void AudioManager::stopAudioStream() {
     _streamFinished = true;
 }
 
-void AudioManager::_drainRingToI2S(size_t maxBytes) {
+void AudioManager::_drainRingToI2S(size_t maxSamples) {
     if (_ringCount == 0 || _currentMode != AudioMode::SPEAKER_ACTIVE) return;
 
-    size_t toWrite = min(maxBytes, (size_t)_ringCount);
-    toWrite &= ~1; // 16-bit sample aligned
-    if (toWrite == 0) return;
+    size_t toProcess = min(maxSamples, (size_t)_ringCount);
+    if (toProcess == 0) return;
 
-    size_t chunk1 = min(toWrite, STREAM_RING_SIZE - _ringTail);
-    chunk1 &= ~1;
-    if (chunk1 == 0) return;
+    size_t chunk1 = min(toProcess, STREAM_RING_SAMPLES - _ringTail);
+    size_t samplesToProcess = min((size_t)256, chunk1);
+    if (samplesToProcess == 0) return;
 
-    int16_t* monoSamples = (int16_t*)(_ringBuffer + _ringTail);
-    size_t numSamples = min((size_t)256, chunk1 / 2);
-    int16_t stereoBuf[512];
+    int16_t stereoBuf[512]; // 256 stereo pairs = 512 int16s
 
-    for (size_t i = 0; i < numSamples; i++) {
-        stereoBuf[i * 2]     = monoSamples[i];
-        stereoBuf[i * 2 + 1] = monoSamples[i];
+    for (size_t i = 0; i < samplesToProcess; i++) {
+        int16_t s = _ringBuffer[_ringTail + i];
+        stereoBuf[i * 2]     = s; // Left
+        stereoBuf[i * 2 + 1] = s; // Right
     }
 
     size_t bytesWritten = 0;
-    i2s_write(AUDIO_I2S_PORT, stereoBuf, numSamples * 4, &bytesWritten, 10);
+    i2s_write(AUDIO_I2S_PORT, stereoBuf, samplesToProcess * 4, &bytesWritten, 10);
 
-    size_t monoConsumed = (bytesWritten / 4) * 2;
-    if (monoConsumed > 0) {
-        _ringTail = (_ringTail + monoConsumed) % STREAM_RING_SIZE;
-        _ringCount -= monoConsumed;
+    size_t samplesConsumed = bytesWritten / 4;
+    if (samplesConsumed > 0) {
+        _ringTail = (_ringTail + samplesConsumed) % STREAM_RING_SAMPLES;
+        _ringCount -= samplesConsumed;
     }
 
-    if (numSamples > 0) {
+    if (samplesConsumed > 0) {
         int32_t sum = 0;
-        size_t sampleCount = min((size_t)64, numSamples);
-        for (size_t s = 0; s < sampleCount; s++) {
-            sum += abs(monoSamples[s]);
+        for (size_t s = 0; s < samplesConsumed; s++) {
+            sum += abs(stereoBuf[s * 2]);
         }
-        _playLevel = (float)sum / sampleCount / 32768.0f;
+        _playLevel = (float)sum / samplesConsumed / 32768.0f;
     }
 }
 

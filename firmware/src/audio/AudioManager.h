@@ -62,15 +62,15 @@ private:
     size_t _playPos = 0;
     float _playLevel = 0.0f;
 
-    // Streaming Ring Buffer (16KB)
-    static const size_t STREAM_RING_SIZE = 16384;
-    uint8_t _ringBuffer[STREAM_RING_SIZE];
+    // Streaming Ring Buffer (8192 int16_t samples = 16KB)
+    static const size_t STREAM_RING_SAMPLES = 8192;
+    int16_t _ringBuffer[STREAM_RING_SAMPLES];
     volatile size_t _ringHead = 0;
     volatile size_t _ringTail = 0;
     volatile size_t _ringCount = 0;
     bool _streamActive = false;
     bool _streamFinished = false;
-    void _drainRingToI2S(size_t maxBytes);
+    void _drainRingToI2S(size_t maxSamples);
     
     // I2S mode switching
     void _switchToMic();
