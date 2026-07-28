@@ -29,16 +29,20 @@ public:
     uint8_t* getRecordedData(size_t* outSize);
     void playBuffer(uint8_t* data, size_t length);
     void playTestTone(uint32_t durationMs = 3000);
-    bool isPlaying() { return _playing; }
+    bool isPlaying() { return _playing || _streamActive; }
     float getPlaybackLevel();
 
     // Scan voice feedback — plays spoken voice clips from flash
     void playScanStartVoice();     // "Scanning started..."
     void playScanCompleteVoice();  // "Scan completed..."
     void playScanProgressBeep();   // Short periodic beep (tone only)
-
-    // Play pre-recorded PCM audio from PROGMEM flash
     void playPcmFromProgmem(const uint8_t* data, size_t length);
+
+    // Streaming PCM Audio (for long TTS speech over BLE without RAM limits)
+    void startAudioStream();
+    void writeAudioStream(const uint8_t* data, size_t length);
+    void stopAudioStream();
+    bool isStreaming() { return _streamActive; }
 
 private:
     bool _recording = false;
@@ -57,6 +61,16 @@ private:
     size_t _playSize = 0;
     size_t _playPos = 0;
     float _playLevel = 0.0f;
+
+    // Streaming Ring Buffer (16KB)
+    static const size_t STREAM_RING_SIZE = 16384;
+    uint8_t _ringBuffer[STREAM_RING_SIZE];
+    volatile size_t _ringHead = 0;
+    volatile size_t _ringTail = 0;
+    volatile size_t _ringCount = 0;
+    bool _streamActive = false;
+    bool _streamFinished = false;
+    void _drainRingToI2S(size_t maxBytes);
     
     // I2S mode switching
     void _switchToMic();

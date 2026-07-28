@@ -3,6 +3,11 @@
  */
 
 #include "BLEClient.h"
+#include "../audio/AudioManager.h"
+#include "../display/FaceRenderer.h"
+
+extern AudioManager audio;
+extern FaceRenderer face;
 
 // Forward declaration of callbacks
 class CmdWriteCallback;
@@ -363,19 +368,34 @@ void AgroMateBLE::_handleIncomingMessage(const BLEMessage& msg) {
                 dataType = msg.payload[12];
                 
                 _resetRxReassembly();
-                
-                _rxBuffer = (uint8_t*)malloc(totalSize);
-                if (_rxBuffer) {
+
+                if (dataType == static_cast<uint8_t>(MessageType::SPEECH_AUDIO)) {
+                    // Streaming audio over BLE - stream directly into I2S without allocating large RAM buffer
+                    _rxIsAudioStreaming = true;
                     _rxTransferActive = true;
                     _rxTransferId = transferId;
                     _rxTotalSize = totalSize;
                     _rxTotalChunks = totalChunks;
                     _rxChunksReceived = 0;
                     _rxDataType = dataType;
-                    Serial.printf("Incoming chunked transfer started: id=%u, size=%u, chunks=%u, type=0x%02X\n",
-                                  transferId, totalSize, totalChunks, dataType);
+                    Serial.printf("[BLE] Incoming SPEECH_AUDIO stream: id=%u, size=%u, chunks=%u\n",
+                                  transferId, totalSize, totalChunks);
+                    audio.startAudioStream();
+                    face.setExpression(Expression::TALKING);
                 } else {
-                    Serial.printf("Failed to allocate RX reassembly buffer of size %u!\n", totalSize);
+                    _rxBuffer = (uint8_t*)malloc(totalSize);
+                    if (_rxBuffer) {
+                        _rxTransferActive = true;
+                        _rxTransferId = transferId;
+                        _rxTotalSize = totalSize;
+                        _rxTotalChunks = totalChunks;
+                        _rxChunksReceived = 0;
+                        _rxDataType = dataType;
+                        Serial.printf("Incoming chunked transfer started: id=%u, size=%u, chunks=%u, type=0x%02X\n",
+                                      transferId, totalSize, totalChunks, dataType);
+                    } else {
+                        Serial.printf("Failed to allocate RX reassembly buffer of size %u!\n", totalSize);
+                    }
                 }
             }
             break;
@@ -388,23 +408,28 @@ void AgroMateBLE::_handleIncomingMessage(const BLEMessage& msg) {
                 memcpy(&checksum, msg.payload + 4, 4);
                 
                 if (_rxTransferActive && _rxTransferId == transferId) {
-                    uint32_t computed = calculateCRC32(_rxBuffer, _rxTotalSize);
-                    if (computed == checksum) {
-                        Serial.printf("Reassembly complete! Size: %u. Verifying checksum OK.\n", _rxTotalSize);
-                        
-                        // Pass reassembled buffer to user command callback
-                        if (_cmdCallback) {
-                            uint8_t* temp = (uint8_t*)malloc(_rxTotalSize + 1);
-                            if (temp) {
-                                temp[0] = _rxDataType;
-                                memcpy(temp + 1, _rxBuffer, _rxTotalSize);
-                                _cmdCallback(temp, _rxTotalSize + 1);
-                                free(temp);
+                    if (_rxIsAudioStreaming) {
+                        Serial.println("[BLE] SPEECH_AUDIO stream finished receiving!");
+                        audio.stopAudioStream();
+                    } else if (_rxBuffer) {
+                        uint32_t computed = calculateCRC32(_rxBuffer, _rxTotalSize);
+                        if (computed == checksum) {
+                            Serial.printf("Reassembly complete! Size: %u. Verifying checksum OK.\n", _rxTotalSize);
+                            
+                            // Pass reassembled buffer to user command callback
+                            if (_cmdCallback) {
+                                uint8_t* temp = (uint8_t*)malloc(_rxTotalSize + 1);
+                                if (temp) {
+                                    temp[0] = _rxDataType;
+                                    memcpy(temp + 1, _rxBuffer, _rxTotalSize);
+                                    _cmdCallback(temp, _rxTotalSize + 1);
+                                    free(temp);
+                                }
                             }
+                        } else {
+                            Serial.printf("CRC32 mismatch on reassembled data! Computed: 0x%08X, expected: 0x%08X\n",
+                                          computed, checksum);
                         }
-                    } else {
-                        Serial.printf("CRC32 mismatch on reassembled data! Computed: 0x%08X, expected: 0x%08X\n",
-                                      computed, checksum);
                     }
                 }
                 _resetRxReassembly();
@@ -421,7 +446,10 @@ void AgroMateBLE::_handleIncomingMessage(const BLEMessage& msg) {
                 if (_rxTransferId == transferId) {
                     size_t chunkDataLen = msg.length - 6; // subtract 4-byte transferId + 2-byte chunkIndex
                     
-                    if (_rxBytesReceived + chunkDataLen <= _rxTotalSize) {
+                    if (_rxIsAudioStreaming) {
+                        audio.writeAudioStream(msg.payload + 6, chunkDataLen);
+                        _rxChunksReceived++;
+                    } else if (_rxBuffer && _rxBytesReceived + chunkDataLen <= _rxTotalSize) {
                         memcpy(_rxBuffer + _rxBytesReceived, msg.payload + 6, chunkDataLen);
                         _rxBytesReceived += chunkDataLen;
                         _rxChunksReceived++;
@@ -455,6 +483,7 @@ void AgroMateBLE::_resetRxReassembly() {
         _rxBuffer = nullptr;
     }
     _rxTransferActive = false;
+    _rxIsAudioStreaming = false;
     _rxTransferId = 0;
     _rxTotalSize = 0;
     _rxTotalChunks = 0;

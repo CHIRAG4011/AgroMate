@@ -45,6 +45,7 @@ private:
 
     // Rx Reassembly state
     bool _rxTransferActive = false;
+    bool _rxIsAudioStreaming = false;
     uint32_t _rxTransferId = 0;
     uint32_t _rxTotalSize = 0;
     uint32_t _rxTotalChunks = 0;

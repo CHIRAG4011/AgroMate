@@ -163,6 +163,74 @@ void AudioManager::update() {
             _switchToMic();
         }
     }
+
+    if (_streamActive) {
+        if (_currentMode != AudioMode::SPEAKER_ACTIVE) {
+            _switchToSpeaker();
+        }
+
+        if (_ringCount > 0) {
+            _drainRingToI2S(1024);
+        } else if (_streamFinished) {
+            _streamActive = false;
+            _streamFinished = false;
+            _playLevel = 0.0f;
+            Serial.println("[Audio] Streaming audio playback complete");
+            _switchToMic();
+        }
+    }
+}
+
+void AudioManager::startAudioStream() {
+    Serial.println("[Audio] Starting streaming audio mode...");
+    _switchToSpeaker();
+    _ringHead = 0;
+    _ringTail = 0;
+    _ringCount = 0;
+    _streamActive = true;
+    _streamFinished = false;
+    _playing = false;
+    _playLevel = 0.0f;
+}
+
+void AudioManager::writeAudioStream(const uint8_t* data, size_t length) {
+    if (!data || length == 0 || !_streamActive) return;
+
+    for (size_t i = 0; i < length; i++) {
+        if (_ringCount >= STREAM_RING_SIZE) {
+            _drainRingToI2S(512);
+        }
+        _ringBuffer[_ringHead] = data[i];
+        _ringHead = (_ringHead + 1) % STREAM_RING_SIZE;
+        _ringCount++;
+    }
+}
+
+void AudioManager::stopAudioStream() {
+    Serial.println("[Audio] Audio stream finished receiving, draining buffer...");
+    _streamFinished = true;
+}
+
+void AudioManager::_drainRingToI2S(size_t maxBytes) {
+    if (_ringCount == 0 || _currentMode != AudioMode::SPEAKER_ACTIVE) return;
+
+    size_t toWrite = min(maxBytes, (size_t)_ringCount);
+    size_t chunk1 = min(toWrite, STREAM_RING_SIZE - _ringTail);
+
+    size_t bytesWritten = 0;
+    i2s_write(AUDIO_I2S_PORT, _ringBuffer + _ringTail, chunk1, &bytesWritten, 10);
+    _ringTail = (_ringTail + bytesWritten) % STREAM_RING_SIZE;
+    _ringCount -= bytesWritten;
+
+    if (bytesWritten >= 2) {
+        int16_t* samples = (int16_t*)(_ringBuffer + _ringTail);
+        int32_t sum = 0;
+        size_t sampleCount = min((size_t)64, bytesWritten / 2);
+        for (size_t s = 0; s < sampleCount; s++) {
+            sum += abs(samples[s]);
+        }
+        _playLevel = (float)sum / sampleCount / 32768.0f;
+    }
 }
 
 void AudioManager::startRecording(uint32_t durationMs) {
