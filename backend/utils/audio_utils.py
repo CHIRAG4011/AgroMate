@@ -284,20 +284,32 @@ def validate_audio(data: bytes) -> Tuple[bool, str]:
 
 
 def apply_speech_filter(pcm_bytes: bytes, sample_rate: int = 16000) -> bytes:
-    """Apply 150Hz high-pass filter to remove low-frequency rumble that distorts small speakers."""
+    """Apply 150Hz high-pass filter + Dynamic Range Compression (DRC) for maximum speaker volume."""
     if not pcm_bytes:
         return pcm_bytes
     try:
         from scipy.signal import butter, sosfilt
         samples = np.frombuffer(pcm_bytes, dtype=np.int16).astype(np.float32)
-        # 150 Hz High-Pass Filter for small speaker clarity
+        
+        # 1. 150 Hz High-Pass Filter (removes low-frequency rumble that distorts small speaker)
         sos = butter(2, 150, 'highpass', fs=sample_rate, output='sos')
         filtered = sosfilt(sos, samples)
-        max_val = np.max(np.abs(filtered))
+        
+        # 2. Dynamic Range Compression (DRC): Boost quiet speech syllables (+8dB gain boost)
+        norm_s = filtered / 32768.0
+        abs_s = np.abs(norm_s)
+        thresh = 0.15
+        ratio = 2.5
+        compressed = np.where(abs_s > thresh, thresh + (abs_s - thresh) / ratio, abs_s * 2.2)
+        compressed = np.copysign(compressed, norm_s)
+        
+        # 3. Peak normalize to 99% max 16-bit range (32400)
+        max_val = np.max(np.abs(compressed))
         if max_val > 0:
-            scale = 28000.0 / max_val
-            filtered = (filtered * scale).clip(-32000, 32000)
-        return filtered.astype(np.int16).tobytes()
+            scale = 32400.0 / max_val
+            compressed = (compressed * scale).clip(-32700, 32700)
+            
+        return compressed.astype(np.int16).tobytes()
     except Exception as e:
         logger.warning(f"Speech filter failed: {e}")
         return pcm_bytes

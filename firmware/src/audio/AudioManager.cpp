@@ -226,7 +226,10 @@ void AudioManager::_drainRingToI2S(size_t maxSamples) {
     int16_t stereoBuf[512]; // 256 stereo pairs = 512 int16s
 
     for (size_t i = 0; i < samplesToProcess; i++) {
-        int16_t s = _ringBuffer[_ringTail + i];
+        int32_t val = ((int32_t)_ringBuffer[_ringTail + i] * 13) / 8; // +4.2dB gain boost
+        if (val > 32767) val = 32767;
+        if (val < -32768) val = -32768;
+        int16_t s = (int16_t)val;
         stereoBuf[i * 2]     = s; // Left
         stereoBuf[i * 2 + 1] = s; // Right
     }
@@ -353,8 +356,12 @@ void AudioManager::playPcmFromProgmem(const uint8_t* data, size_t length) {
         
         size_t numSamples = toRead / 2;
         for (size_t i = 0; i < numSamples; i++) {
-            stereoBuf[i * 2]     = monoBuf[i];
-            stereoBuf[i * 2 + 1] = monoBuf[i];
+            int32_t val = ((int32_t)monoBuf[i] * 13) / 8; // +4.2dB gain boost
+            if (val > 32767) val = 32767;
+            if (val < -32768) val = -32768;
+            int16_t s = (int16_t)val;
+            stereoBuf[i * 2]     = s;
+            stereoBuf[i * 2 + 1] = s;
         }
 
         size_t bw = 0;
