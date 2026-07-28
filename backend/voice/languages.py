@@ -16,11 +16,11 @@ SUPPORTED_LANGUAGES = {
     "en": {
         "name": "English",
         "native": "English",
-        "code": "en-IN",
+        "code": "en-US",
         "vosk_model": "vosk-model-small-en-us",
-        "tts_voice": "en-IN-NeerjaNeural",
-        "tts_voice_male": "en-IN-PrabhatNeural",
-        "google_stt_code": "en-IN",
+        "tts_voice": "en-US-AriaNeural",
+        "tts_voice_male": "en-US-GuyNeural",
+        "google_stt_code": "en-US",
         "script": "Latin",
     },
     "hi": {

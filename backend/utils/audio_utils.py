@@ -283,10 +283,30 @@ def validate_audio(data: bytes) -> Tuple[bool, str]:
     return True, "OK"
 
 
+def apply_speech_filter(pcm_bytes: bytes, sample_rate: int = 16000) -> bytes:
+    """Apply 150Hz high-pass filter to remove low-frequency rumble that distorts small speakers."""
+    if not pcm_bytes:
+        return pcm_bytes
+    try:
+        from scipy.signal import butter, sosfilt
+        samples = np.frombuffer(pcm_bytes, dtype=np.int16).astype(np.float32)
+        # 150 Hz High-Pass Filter for small speaker clarity
+        sos = butter(2, 150, 'highpass', fs=sample_rate, output='sos')
+        filtered = sosfilt(sos, samples)
+        max_val = np.max(np.abs(filtered))
+        if max_val > 0:
+            scale = 28000.0 / max_val
+            filtered = (filtered * scale).clip(-32000, 32000)
+        return filtered.astype(np.int16).tobytes()
+    except Exception as e:
+        logger.warning(f"Speech filter failed: {e}")
+        return pcm_bytes
+
+
 def decode_to_pcm(audio_bytes: bytes, audio_format: str, target_sample_rate: int = SAMPLE_RATE) -> bytes:
     """
     Convert compressed audio bytes (MP3, WAV, etc.) to raw 16-bit PCM bytes.
-    Uses soundfile as a robust, native decoder without requiring ffmpeg.
+    Applies high-quality resampling and speech filtering.
     """
     import io
     import soundfile as sf
@@ -306,7 +326,7 @@ def decode_to_pcm(audio_bytes: bytes, audio_format: str, target_sample_rate: int
         if samplerate != target_sample_rate:
             pcm_bytes = resample_audio(pcm_bytes, samplerate, target_sample_rate, sample_width=2)
             
-        return pcm_bytes
+        return apply_speech_filter(pcm_bytes, target_sample_rate)
     except Exception as e:
         logger.error(f"Failed to decode {audio_format} to PCM using soundfile: {e}. Trying pydub fallback.")
         
@@ -320,7 +340,7 @@ def decode_to_pcm(audio_bytes: bytes, audio_format: str, target_sample_rate: int
             
             audio = AudioSegment.from_file(io.BytesIO(audio_bytes), format=audio_format)
             audio = audio.set_frame_rate(target_sample_rate).set_channels(1).set_sample_width(2)
-            return audio.raw_data
+            return apply_speech_filter(audio.raw_data, target_sample_rate)
         except Exception as pe:
             logger.error(f"Pydub fallback decode failed: {pe}. Ensure audio system dependencies are met.")
             return b""
