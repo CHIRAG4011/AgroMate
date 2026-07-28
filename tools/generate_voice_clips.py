@@ -46,10 +46,11 @@ async def generate_clip(text: str, name: str, output_dir: str):
             num_samples = int(len(audio_data) * 16000 / sr)
             audio_data = resample(audio_data.astype(np.float64), num_samples).astype(np.int16)
         
-        # Amplify to use full dynamic range (normalize to ~90% of max)
+        # Amplify to absolute maximum volume for small speaker
         max_val = np.max(np.abs(audio_data))
         if max_val > 0:
-            scale = (32000.0 / max_val)  # ~97% of int16 max
+            # Normalize to 100% of int16 range, then apply 1.5x gain with hard clipping
+            scale = (32700.0 / max_val) * 1.5
             audio_data = (audio_data.astype(np.float64) * scale).clip(-32767, 32767).astype(np.int16)
         
         pcm_bytes = audio_data.tobytes()

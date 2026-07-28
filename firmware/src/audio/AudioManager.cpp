@@ -68,10 +68,13 @@ void AudioManager::_switchToSpeaker() {
     spkConfig.mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX);
     spkConfig.sample_rate = AUDIO_SAMPLE_RATE;
     spkConfig.bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT;
-    spkConfig.channel_format = I2S_CHANNEL_FMT_ONLY_LEFT;
+    // ALL_LEFT duplicates mono data to BOTH L+R I2S slots.
+    // ONLY_LEFT sends silence in the R slot, halving effective volume
+    // and causing buzzing artifacts on MAX98357A.
+    spkConfig.channel_format = I2S_CHANNEL_FMT_ALL_LEFT;
     spkConfig.communication_format = I2S_COMM_FORMAT_STAND_I2S;
     spkConfig.intr_alloc_flags = ESP_INTR_FLAG_LEVEL1;
-    spkConfig.dma_buf_count = 8;
+    spkConfig.dma_buf_count = 16;         // More DMA buffers for smoother playback
     spkConfig.dma_buf_len = AUDIO_BUFFER_SIZE;
     spkConfig.use_apll = false;
     spkConfig.tx_desc_auto_clear = true;
