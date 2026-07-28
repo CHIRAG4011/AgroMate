@@ -155,10 +155,6 @@ void AudioManager::update() {
         } else {
             _playing = false;
             _playLevel = 0;
-            if (_playBuffer) {
-                free(_playBuffer);
-                _playBuffer = nullptr;
-            }
             Serial.println("[Audio] Playback complete");
             // Switch back to mic mode (ready for next recording)
             _switchToMic();
@@ -202,24 +198,12 @@ void AudioManager::playBuffer(uint8_t* data, size_t length) {
     
     _switchToSpeaker();
 
-    // Free any previous play buffer if still allocated
-    if (_playBuffer) {
-        free(_playBuffer);
-        _playBuffer = nullptr;
-    }
-
-    _playBuffer = (uint8_t*)malloc(length);
-    if (!_playBuffer) {
-        Serial.println("[Audio] Failed to allocate playBuffer heap memory!");
-        return;
-    }
-
-    memcpy(_playBuffer, data, length);
+    _playBuffer = data;
     _playSize = length;
     _playPos = 0;
     _playing = true;
     _playLevel = 0;
-    Serial.printf("[Audio] Playing speech audio buffer: %u bytes\n", length);
+    Serial.printf("[Audio] Playing buffer: %u bytes\n", length);
 }
 
 float AudioManager::getPlaybackLevel() {
@@ -284,28 +268,11 @@ void AudioManager::_playToneBlocking(float freqHz, uint32_t durationMs, float am
     }
 }
 
-// ── Scan Started: Ascending 3-note chime (C5 → E5 → G5) ──
-void AudioManager::playScanStartTone() {
-    Serial.println("[Audio] Scan Start tone");
-    _switchToSpeaker();
-
-    _playToneBlocking(523.0f, 150);  // C5 - 150ms
-    _playToneBlocking(659.0f, 150);  // E5 - 150ms
-    _playToneBlocking(784.0f, 250);  // G5 - 250ms (longer final note)
-
-    // Flush
-    int16_t silence[64] = {0};
-    size_t d = 0;
-    i2s_write(AUDIO_I2S_PORT, silence, sizeof(silence), &d, portMAX_DELAY);
-
-    _switchToMic();
-}
-
 // ── Scan Progress: Short high-pitched beep ──
 void AudioManager::playScanProgressBeep() {
     _switchToSpeaker();
 
-    _playToneBlocking(880.0f, 100, 8000.0f);  // A5 - 100ms, softer
+    _playToneBlocking(880.0f, 100, 24000.0f);  // A5 - 100ms, loud
 
     int16_t silence[64] = {0};
     size_t d = 0;
@@ -314,20 +281,45 @@ void AudioManager::playScanProgressBeep() {
     _switchToMic();
 }
 
-// ── Scan Complete: Success arpeggio chime (C5 → E5 → G5 → C6) ──
-void AudioManager::playScanCompleteTone() {
-    Serial.println("[Audio] Scan Complete tone");
+// ── Play pre-recorded PCM from PROGMEM flash ──
+void AudioManager::playPcmFromProgmem(const uint8_t* data, size_t length) {
+    Serial.printf("[Audio] Playing PROGMEM voice clip (%u bytes, %.1fs)\n", length, (float)length / 32000.0f);
     _switchToSpeaker();
 
-    _playToneBlocking(523.0f, 120);   // C5
-    _playToneBlocking(659.0f, 120);   // E5
-    _playToneBlocking(784.0f, 120);   // G5
-    _playToneBlocking(1047.0f, 350);  // C6 - long final high note
+    const size_t CHUNK = 512;  // Read 512 bytes at a time from flash
+    uint8_t buf[CHUNK];
+    size_t pos = 0;
 
-    // Flush
-    int16_t silence[64] = {0};
+    while (pos < length) {
+        size_t toRead = min(CHUNK, length - pos);
+        // Read from PROGMEM (flash) into RAM buffer
+        memcpy_P(buf, data + pos, toRead);
+        
+        size_t bw = 0;
+        i2s_write(AUDIO_I2S_PORT, buf, toRead, &bw, portMAX_DELAY);
+        pos += toRead;
+    }
+
+    // Flush DMA buffers with silence
+    memset(buf, 0, CHUNK);
     size_t d = 0;
-    i2s_write(AUDIO_I2S_PORT, silence, sizeof(silence), &d, portMAX_DELAY);
+    i2s_write(AUDIO_I2S_PORT, buf, CHUNK, &d, portMAX_DELAY);
 
+    Serial.println("[Audio] Voice clip complete");
     _switchToMic();
 }
+
+// ── Scan Start Voice: Speaks "Scanning started..." from flash ──
+#include "voices/voice_scan_start.h"
+void AudioManager::playScanStartVoice() {
+    Serial.println("[Audio] Playing 'Scan Started' voice");
+    playPcmFromProgmem(VOICE_SCAN_START, VOICE_SCAN_START_SIZE);
+}
+
+// ── Scan Complete Voice: Speaks "Scan completed..." from flash ──
+#include "voices/voice_scan_complete.h"
+void AudioManager::playScanCompleteVoice() {
+    Serial.println("[Audio] Playing 'Scan Complete' voice");
+    playPcmFromProgmem(VOICE_SCAN_COMPLETE, VOICE_SCAN_COMPLETE_SIZE);
+}
+

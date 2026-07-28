@@ -32,10 +32,13 @@ public:
     bool isPlaying() { return _playing; }
     float getPlaybackLevel();
 
-    // Scan voice feedback tones
-    void playScanStartTone();     // Ascending 3-note chime
-    void playScanProgressBeep();  // Short periodic beep
-    void playScanCompleteTone();  // Success arpeggio chime
+    // Scan voice feedback — plays spoken voice clips from flash
+    void playScanStartVoice();     // "Scanning started..."
+    void playScanCompleteVoice();  // "Scan completed..."
+    void playScanProgressBeep();   // Short periodic beep (tone only)
+
+    // Play pre-recorded PCM audio from PROGMEM flash
+    void playPcmFromProgmem(const uint8_t* data, size_t length);
 
 private:
     bool _recording = false;
@@ -61,5 +64,5 @@ private:
     void _uninstallI2S();
     
     // Helper: play a single tone at given frequency for given duration
-    void _playToneBlocking(float freqHz, uint32_t durationMs, float amplitude = 12000.0f);
+    void _playToneBlocking(float freqHz, uint32_t durationMs, float amplitude = 30000.0f);
 };

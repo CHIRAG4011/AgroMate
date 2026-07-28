@@ -72,8 +72,8 @@ int CameraManager::begin() {
   config.pin_pwdn = -1;
   config.pin_reset = -1;
 
-  config.xclk_freq_hz = 10000000; // 10MHz — stable for this OV7670 module (20MHz causes green/pink lines)
-  config.jpeg_quality = 10;       // Higher quality JPEG (lower = better quality)
+  config.xclk_freq_hz = 10000000; // 10MHz is standard and stable for OV7670
+  config.jpeg_quality = 12;
 
 #ifdef BOARD_HAS_PSRAM
   config.pixel_format = PIXFORMAT_YUV422;
@@ -85,6 +85,7 @@ int CameraManager::begin() {
 #else
   // Color YUV422 (YUYV) at QVGA (320x240)
   // Frame buffer size: 320*240*2 = 153,600 bytes in DRAM
+  // We send the raw YUV422 bytes directly to the backend to avoid frame2jpg() DRAM allocation overhead.
   config.pixel_format = PIXFORMAT_YUV422;
   config.frame_size = FRAMESIZE_QVGA;
   config.fb_location = CAMERA_FB_IN_DRAM;
@@ -109,31 +110,20 @@ int CameraManager::begin() {
     pinMode(pin, INPUT_PULLUP);
   }
 
-  // ── OV7670 Sensor Settings — Neutral (matching clean reference output) ──
+  // Adjust sensor settings for plant photography (tuned for vivid leaf colors)
   sensor_t* s = esp_camera_sensor_get();
   if (s) {
-      // All adjustments at ZERO/neutral — the OV7670 defaults produce the cleanest output.
-      // Boosting contrast/saturation/sharpness on this sensor amplifies noise.
-      if (s->set_brightness)     s->set_brightness(s, 0);
-      if (s->set_contrast)       s->set_contrast(s, 0);
-      if (s->set_saturation)     s->set_saturation(s, 0);
-
-      // Auto White Balance ON for correct colors
-      if (s->set_whitebal)       s->set_whitebal(s, 1);
-      if (s->set_awb_gain)       s->set_awb_gain(s, 1);
-
-      // Auto Exposure + Auto Gain ON
-      if (s->set_exposure_ctrl)  s->set_exposure_ctrl(s, 1);
-      if (s->set_gain_ctrl)      s->set_gain_ctrl(s, 1);
-
-      // Normal color mode
-      if (s->set_special_effect) s->set_special_effect(s, 0);
-
-      Serial.println("[Camera] OV7670 sensor: neutral settings (AWB+AEC+AGC ON, no boost)");
+      if (s->set_brightness)     s->set_brightness(s, 0);      // 0 is standard, prevents washed out foggy frames
+      if (s->set_contrast)       s->set_contrast(s, 2);        // Max contrast for punchy colors & clear outlines
+      if (s->set_saturation)     s->set_saturation(s, 2);      // Boost saturation for vivid greens
+      if (s->set_whitebal)       s->set_whitebal(s, 1);        // Auto white balance ON
+      if (s->set_awb_gain)       s->set_awb_gain(s, 1);        // AWB gain ON
+      if (s->set_special_effect) s->set_special_effect(s, 0);  // Force normal color mode (disables grayscale)
+      Serial.println("[Camera] High-clarity color sensor settings applied");
   }
 
   _initialized = true;
-  Serial.println("[Camera] OV7670 initialized OK (QVGA Color YUV422 @ 10MHz XCLK)");
+  Serial.println("[Camera] OV7670 initialized OK (QVGA Color YUV422)");
   return 0;
 }
 

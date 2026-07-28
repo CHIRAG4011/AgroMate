@@ -217,13 +217,31 @@ def convert_raw_to_jpeg(data: bytes) -> bytes:
             logger.info("Converting raw 320x240 YUV422 to JPEG using OpenCV...")
             arr = np.frombuffer(data, dtype=np.uint8).reshape((240, 320, 2))
             
-            # Clean YUV422 (YUYV) to BGR conversion — no enhancement needed.
-            # The OV7670 sensor produces clean output at neutral settings.
-            # Any post-processing (CLAHE, saturation boost, sharpening) amplifies
-            # the inherent noise of this low-cost sensor and degrades image quality.
+            # Use OpenCV's native YUV422 (YUYV) to BGR conversion — correct for OV7670
             bgr_img = cv2.cvtColor(arr, cv2.COLOR_YUV2BGR_YUYV)
             
-            success, jpeg_data = cv2.imencode('.jpg', bgr_img, [cv2.IMWRITE_JPEG_QUALITY, 92])
+            # --- Image enhancement pipeline for vivid plant photography ---
+            
+            # 1. Apply CLAHE (Contrast Limited Adaptive Histogram Equalization)
+            #    for adaptive contrast boost that matches the sensor's contrast=2 setting
+            lab = cv2.cvtColor(bgr_img, cv2.COLOR_BGR2LAB)
+            l_ch, a_ch, b_ch = cv2.split(lab)
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(4, 4))
+            l_ch = clahe.apply(l_ch)
+            lab = cv2.merge([l_ch, a_ch, b_ch])
+            bgr_img = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+            
+            # 2. Boost color saturation to match sensor's saturation=2 setting
+            #    (vivid greens for leaf photography)
+            hsv = cv2.cvtColor(bgr_img, cv2.COLOR_BGR2HSV).astype(np.float32)
+            hsv[:, :, 1] = np.clip(hsv[:, :, 1] * 1.4, 0, 255)  # 40% saturation boost
+            bgr_img = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR)
+            
+            # 3. Apply unsharp mask for crisp leaf detail
+            gaussian = cv2.GaussianBlur(bgr_img, (0, 0), 2.0)
+            bgr_img = cv2.addWeighted(bgr_img, 1.5, gaussian, -0.5, 0)
+            
+            success, jpeg_data = cv2.imencode('.jpg', bgr_img, [cv2.IMWRITE_JPEG_QUALITY, 95])
             if success:
                 return bytes(jpeg_data)
         except Exception as e:
