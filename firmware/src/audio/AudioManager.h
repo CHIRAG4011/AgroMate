@@ -47,7 +47,6 @@ public:
 private:
     bool _recording = false;
     bool _playing = false;
-    AudioMode _currentMode = AudioMode::IDLE;
     
     // Recording state
     uint8_t* _recordBuffer = nullptr;
@@ -72,10 +71,9 @@ private:
     bool _streamFinished = false;
     void _drainRingToI2S(size_t maxSamples);
     
-    // I2S mode switching
-    void _switchToMic();
-    void _switchToSpeaker();
-    void _uninstallI2S();
+    // Dedicated Dual I2S Hardware Initialization
+    void _initMicI2S();
+    void _initSpeakerI2S();
     
     // Helper: play a single tone at given frequency for given duration
     void _playToneBlocking(float freqHz, uint32_t durationMs, float amplitude = 30000.0f);

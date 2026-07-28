@@ -62,7 +62,8 @@
 #define CAM_PIN_PCLK 13  // Pixel clock
 
 // ── Audio I2S (Dedicated pins for Mic and Speaker) ──
-#define AUDIO_I2S_PORT I2S_NUM_1
+#define MIC_I2S_PORT I2S_NUM_0
+#define SPK_I2S_PORT I2S_NUM_1
 
 // INMP441 Microphone (I2S RX)
 #define MIC_I2S_BCLK 2      // Microphone Bit Clock
