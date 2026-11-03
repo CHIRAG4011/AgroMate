@@ -73,6 +73,8 @@ private:
     // Drawing methods
     void _drawEye(TFT_eSprite* sprite, float openness, float pupilX, float pupilY);
     void _drawMouth(int16_t cx, int16_t cy);
+    void _drawEyebrows(int16_t leftEyeX, int16_t rightEyeX, int16_t eyeY);
+    void _drawVisorGlow();
     void _drawExpressionOverlay();
     void _updateBlink();
     void _updateEyeMovement();

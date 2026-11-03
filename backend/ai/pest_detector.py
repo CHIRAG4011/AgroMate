@@ -116,6 +116,7 @@ class PestDetector:
         self.settings = get_settings()
         self._model = None
         self._model_loaded = False
+        self._class_labels = PEST_CLASSES
 
     async def initialize(self):
         """Load the pest detection model."""
@@ -155,12 +156,37 @@ class PestDetector:
             if image is None:
                 return None
 
-            input_array = preprocess_for_model(image, input_size=(320, 320))
+            input_meta = self._model.get_inputs()[0]
+            input_name = input_meta.name
+            expected_shape = input_meta.shape
+            target_h = expected_shape[2] if (len(expected_shape) == 4 and expected_shape[1] == 3) else 224
+            target_w = expected_shape[3] if (len(expected_shape) == 4 and expected_shape[1] == 3) else 224
+
+            input_array = preprocess_for_model(image, input_size=(target_w, target_h))
             if input_array is None:
                 return None
 
-            input_name = self._model.get_inputs()[0].name
+            if len(expected_shape) == 4 and expected_shape[1] == 3 and input_array.shape[-1] == 3:
+                input_array = np.transpose(input_array, (0, 3, 1, 2)).astype(np.float32)
+
             outputs = self._model.run(None, {input_name: input_array})
+
+            # Handle classification output [1, num_classes]
+            if len(outputs) == 1:
+                probs = outputs[0][0]
+                if np.min(probs) < 0 or np.sum(probs) > 1.5:
+                    exp_vals = np.exp(probs - np.max(probs))
+                    probs = exp_vals / np.sum(exp_vals)
+                best_idx = int(np.argmax(probs))
+                best_conf = float(probs[best_idx])
+                pest_name = self._class_labels[best_idx] if best_idx < len(self._class_labels) else "Unknown"
+                return PestDetectionResult(
+                    pest_name=pest_name if best_conf >= 0.4 else "No pests detected",
+                    confidence=best_conf,
+                    count=1 if best_conf >= 0.4 else 0,
+                    severity="moderate" if best_conf >= 0.6 else ("mild" if best_conf >= 0.4 else "none"),
+                    model_used="local_onnx",
+                )
 
             # Parse detection output (format depends on model architecture)
             # Standard: [boxes, scores, classes, num_detections]

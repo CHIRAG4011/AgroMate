@@ -11,7 +11,6 @@ void PowerManager::begin(uint32_t idleTimeoutMs) {
 void PowerManager::update() {
     if (_sleeping) return;
     if (millis() - _lastActivity > _idleTimeout) {
-        Serial.println("💤 Idle timeout — entering deep sleep");
         enterSleep();
     }
 }
@@ -23,8 +22,6 @@ void PowerManager::resetIdleTimer() {
 
 void PowerManager::enterSleep() {
     _sleeping = true;
-    Serial.println("Entering deep sleep...");
-    Serial.flush();
     delay(100);
     esp_deep_sleep_start();
 }

@@ -87,11 +87,15 @@ class RobotConnection:
     total_bytes_received: int = 0
     scans_today: int = 0
     config: dict = field(default_factory=lambda: {"language": "en"})
+    last_error: str = ""
     _client: Any = None  # bleak.BleakClient reference
     _ble_device: Any = None  # bleak.backends.device.BLEDevice reference
 
     def transition_to(self, new_state: ConnectionState) -> bool:
         """Attempt a state transition. Returns True if valid."""
+        if new_state == self.state:
+            return True
+
         if new_state in _VALID_TRANSITIONS.get(self.state, set()):
             old_state = self.state
             self.state = new_state
@@ -139,10 +143,10 @@ class RobotConnection:
 
     @property
     def is_alive(self) -> bool:
-        """Check if the robot is responding (heartbeat within 15s)."""
+        """Check if the robot is responding (heartbeat within 90s)."""
         if self.last_heartbeat == 0:
             return self.state == ConnectionState.ACTIVE
-        return (time.time() - self.last_heartbeat) < 15.0
+        return (time.time() - self.last_heartbeat) < 90.0
 
     @property
     def connection_duration(self) -> float:
@@ -178,6 +182,7 @@ class RobotConnection:
             "messages_sent": self.total_messages_sent,
             "messages_received": self.total_messages_received,
             "scans_today": self.scans_today,
+            "last_error": self.last_error,
         }
 
 
@@ -258,25 +263,36 @@ class ConnectionManager:
             self._emit("robot_removed", robot)
 
     def get_robot(self, robot_id: str) -> Optional[RobotConnection]:
-        """Get a robot connection by ID."""
-        return self._robots.get(robot_id)
+        """Get a robot connection by ID or MAC address, auto-registering if valid MAC is provided."""
+        robot = self._robots.get(robot_id)
+        if not robot:
+            robot = self.get_robot_by_mac(robot_id)
+        if not robot and robot_id and (":" in robot_id or "-" in robot_id) and len(robot_id) == 17:
+            robot = self.register_robot(robot_id, "AgroMate", robot_id)
+        return robot
 
     def get_robot_by_mac(self, mac_address: str) -> Optional[RobotConnection]:
         """Get a robot connection by MAC address."""
+        if not mac_address:
+            return None
         for robot in self._robots.values():
-            if robot.mac_address.lower() == mac_address.lower():
+            if robot.mac_address and robot.mac_address.lower() == mac_address.lower():
                 return robot
         return None
 
-    async def send_message(self, robot_id: str, message: BLEMessage, response: bool = True) -> bool:
+    def find_by_mac(self, mac_address: str) -> Optional[RobotConnection]:
+        """Alias for get_robot_by_mac."""
+        return self.get_robot_by_mac(mac_address)
+
+    async def send_message(self, robot_id: str, message: BLEMessage, response: bool = False) -> bool:
         """Send a BLE message to a specific robot."""
-        robot = self._robots.get(robot_id)
+        robot = self.get_robot(robot_id)
         if not robot:
             logger.warning(f"Robot {robot_id} not found")
             return False
 
-        if robot.state != ConnectionState.ACTIVE:
-            logger.debug(f"Robot {robot.name} not active, queueing message")
+        if not (robot._client and robot._client.is_connected):
+            logger.warning(f"Robot {robot.name} client not connected (state={robot.state.value}), queueing message")
             return robot.enqueue_message(message)
 
         try:
@@ -289,18 +305,58 @@ class ConnectionManager:
                     char_key = "audio_rx"
 
                 encoded = message.encode()
-                await robot._client.write_gatt_char(
-                    BLE_CHAR_UUIDS[char_key],
-                    encoded,
-                    response=response,
-                )
+                uuid_str = BLE_CHAR_UUIDS[char_key]
+                if not robot._client.services:
+                    try:
+                        await robot._client.get_services()
+                    except Exception as e:
+                        logger.warning(f"get_services error: {e}")
+
+                char = robot._client.services.get_characteristic(uuid_str) if robot._client.services else None
+                if not char and robot._client.services:
+                    for s in robot._client.services:
+                        for c in s.characteristics:
+                            if c.uuid.lower() == uuid_str.lower():
+                                char = c
+                                break
+                        if char:
+                            break
+
+                if not char:
+                    logger.error(f"Characteristic {uuid_str} not found in services {[s.uuid for s in robot._client.services] if robot._client.services else 'none'}")
+                    return False
+
+                # Use write-without-response when available (avoids WinRT Unreachable exceptions and connection drops)
+                use_response = False if "write-without-response" in char.properties else response
+
+                try:
+                    await robot._client.write_gatt_char(
+                        char,
+                        encoded,
+                        response=use_response,
+                    )
+                except Exception as write_err:
+                    if not use_response and "write" in char.properties:
+                        logger.warning(f"write without response failed ({write_err}), trying with response=True...")
+                        await robot._client.write_gatt_char(
+                            char,
+                            encoded,
+                            response=True,
+                        )
+                    else:
+                        raise write_err
+
                 robot.total_messages_sent += 1
                 robot.total_bytes_sent += len(encoded)
+                logger.info(f"Sent BLE frame (type=0x{message.msg_type:02X}, len={len(encoded)}) to {robot.name}")
                 return True
         except Exception as e:
-            logger.error(f"Failed to send to {robot.name}: {e}")
-            robot.transition_to(ConnectionState.DISCONNECTED)
-            self._emit("robot_disconnected", robot)
+            err_str = f"{type(e).__name__}: {e}"
+            robot.last_error = err_str
+            logger.error(f"Failed to send to {robot.name}: {err_str}")
+            if not (robot._client and robot._client.is_connected):
+                robot.transition_to(ConnectionState.DISCONNECTED)
+                self._emit("robot_disconnected", robot)
             return False
 
         return False
@@ -375,6 +431,8 @@ class ConnectionManager:
         elif message.msg_type == MessageType.ERROR_REPORT:
             err_msg = message.payload.decode("utf-8", errors="replace")
             logger.warning(f"⚠️ Robot error report from {robot.name}: {err_msg}")
+            robot.last_error = f"REPORT: {err_msg}"
+            self._emit("error_report", robot, err_msg)
 
         else:
             logger.debug(
@@ -431,6 +489,16 @@ class ConnectionManager:
                         logger.warning(
                             f"Robot {robot.name} heartbeat timeout"
                         )
+                        # Explicitly tear down client connection so Windows releases the BLE peripheral
+                        # and ESP32-S3 receives disconnect event and restarts advertising
+                        if robot._client:
+                            try:
+                                await robot._client.disconnect()
+                            except Exception as client_err:
+                                logger.debug(f"Disconnect on heartbeat timeout error: {client_err}")
+                            robot._client = None
+                        robot._ble_device = None
+
                         robot.transition_to(ConnectionState.DISCONNECTED)
                         self._emit("robot_disconnected", robot)
                         # Trigger reconnection

@@ -284,32 +284,24 @@ def validate_audio(data: bytes) -> Tuple[bool, str]:
 
 
 def apply_speech_filter(pcm_bytes: bytes, sample_rate: int = 16000) -> bytes:
-    """Apply 150Hz high-pass filter + Dynamic Range Compression (DRC) for maximum speaker volume."""
+    """Apply gentle high-pass filter + peak normalization for loud, clear speaker output."""
     if not pcm_bytes:
         return pcm_bytes
     try:
         from scipy.signal import butter, sosfilt
         samples = np.frombuffer(pcm_bytes, dtype=np.int16).astype(np.float32)
         
-        # 1. 150 Hz High-Pass Filter (removes low-frequency rumble that distorts small speaker)
-        sos = butter(2, 150, 'highpass', fs=sample_rate, output='sos')
+        # 1. 100 Hz High-Pass Filter (removes DC offset and low-frequency rumble)
+        sos = butter(2, 100, 'highpass', fs=sample_rate, output='sos')
         filtered = sosfilt(sos, samples)
         
-        # 2. Dynamic Range Compression (DRC): Boost quiet speech syllables (+8dB gain boost)
-        norm_s = filtered / 32768.0
-        abs_s = np.abs(norm_s)
-        thresh = 0.15
-        ratio = 2.5
-        compressed = np.where(abs_s > thresh, thresh + (abs_s - thresh) / ratio, abs_s * 2.2)
-        compressed = np.copysign(compressed, norm_s)
-        
-        # 3. Peak normalize to 99% max 16-bit range (32400)
-        max_val = np.max(np.abs(compressed))
+        # 2. Peak normalize to 99% of full 16-bit range (32500) for MAXIMUM loudness
+        max_val = np.max(np.abs(filtered))
         if max_val > 0:
-            scale = 32400.0 / max_val
-            compressed = (compressed * scale).clip(-32700, 32700)
+            scale = 32500.0 / max_val
+            filtered = (filtered * scale).clip(-32767, 32767)
             
-        return compressed.astype(np.int16).tobytes()
+        return filtered.astype(np.int16).tobytes()
     except Exception as e:
         logger.warning(f"Speech filter failed: {e}")
         return pcm_bytes
@@ -356,3 +348,56 @@ def decode_to_pcm(audio_bytes: bytes, audio_format: str, target_sample_rate: int
         except Exception as pe:
             logger.error(f"Pydub fallback decode failed: {pe}. Ensure audio system dependencies are met.")
             return b""
+
+
+async def play_audio_and_cleanup_async(audio_data: bytes, audio_format: str = "pcm", sample_rate: int = SAMPLE_RATE):
+    """
+    Play generated audio through the active system audio output
+    (e.g., connected Bluetooth speaker, headphones, or PC speakers).
+    Automatically creates a temporary audio file, plays it asynchronously,
+    and cleanly deletes the file immediately after playback is completed.
+    """
+    import asyncio
+    import os
+    import tempfile
+
+    if not audio_data:
+        return
+
+    def _play_worker():
+        temp_file = None
+        try:
+            # If raw PCM, encapsulate into standard WAV format
+            if audio_format == "pcm" or not audio_data.startswith(b"RIFF"):
+                wav_bytes = pcm_to_wav(audio_data, sample_rate=sample_rate)
+            else:
+                wav_bytes = audio_data
+
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+                f.write(wav_bytes)
+                temp_file = f.name
+
+            try:
+                import winsound
+                # Play audio synchronously in this worker thread (routes to active Bluetooth speaker)
+                winsound.PlaySound(temp_file, winsound.SND_FILENAME)
+            except Exception as we:
+                logger.warning(f"winsound playback exception: {we}")
+        except Exception as e:
+            logger.error(f"Failed to play audio on Bluetooth/system speaker: {e}")
+        finally:
+            # Ensure the temporary audio file is always deleted after playback
+            if temp_file and os.path.exists(temp_file):
+                try:
+                    os.remove(temp_file)
+                    logger.info(f"🗑️ Deleted temporary voice audio file: {temp_file}")
+                except Exception as de:
+                    logger.warning(f"Failed to delete temp audio file {temp_file}: {de}")
+
+    try:
+        loop = asyncio.get_running_loop()
+        # Await completion so laptop / Bluetooth speaker playback finishes before sending to BLE
+        await loop.run_in_executor(None, _play_worker)
+    except Exception as e:
+        logger.error(f"Could not dispatch audio playback to executor: {e}")
+

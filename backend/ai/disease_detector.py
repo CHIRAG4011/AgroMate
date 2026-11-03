@@ -252,7 +252,13 @@ class DiseaseDetector:
             if input_array is None:
                 return None
 
-            input_name = self._model.get_inputs()[0].name
+            # Auto-align layout with model expectations (NCHW vs NHWC)
+            input_meta = self._model.get_inputs()[0]
+            input_name = input_meta.name
+            expected_shape = input_meta.shape
+            if len(expected_shape) == 4 and expected_shape[1] == 3 and input_array.shape[-1] == 3:
+                input_array = np.transpose(input_array, (0, 3, 1, 2)).astype(np.float32)
+
             output = self._model.run(None, {input_name: input_array})
             probabilities = output[0][0]
 

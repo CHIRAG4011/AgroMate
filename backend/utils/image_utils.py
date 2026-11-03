@@ -193,14 +193,23 @@ def crop_center(image: Image.Image, target_ratio: float = 1.0) -> Image.Image:
 
 def convert_raw_to_jpeg(data: bytes) -> bytes:
     """
-    Check if the input bytes match raw camera formats (Grayscale or YUV422) at 320x240
-    and convert them to standard JPEG bytes using OpenCV for superior quality.
-    If it's already a JPEG, return it as-is.
+    Check if the input bytes are a standard JPEG or raw camera format, and
+    convert to standard JPEG bytes if necessary.
+    
+    With ESP32-CAM (OV2640), images arrive as hardware-encoded JPEG — no conversion needed.
+    Legacy support is maintained for raw formats from the old OV7670 camera:
+      - 76,800 bytes = QVGA Grayscale (320×240×1)
+      - 153,600 bytes = QVGA YUV422 (320×240×2)
     """
+    # Fast path: if data is already JPEG (starts with 0xFF 0xD8), return immediately
+    if len(data) >= 2 and data[0] == 0xFF and data[1] == 0xD8:
+        logger.info(f"Image is already JPEG ({len(data)} bytes), no conversion needed")
+        return data
+    
     import cv2
     import numpy as np
 
-    # QVGA Grayscale = 320 * 240 * 1 = 76800 bytes
+    # QVGA Grayscale = 320 * 240 * 1 = 76800 bytes (legacy OV7670)
     if len(data) == 76800:
         try:
             logger.info("Converting raw 320x240 Grayscale to JPEG using OpenCV...")
@@ -211,7 +220,7 @@ def convert_raw_to_jpeg(data: bytes) -> bytes:
         except Exception as e:
             logger.error(f"Failed to convert raw Grayscale to JPEG: {e}")
             
-    # QVGA YUV422 (YUYV) = 320 * 240 * 2 = 153600 bytes
+    # QVGA YUV422 (YUYV) = 320 * 240 * 2 = 153600 bytes (legacy OV7670)
     elif len(data) == 153600:
         try:
             logger.info("Converting raw 320x240 YUV422 to JPEG using OpenCV...")

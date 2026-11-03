@@ -253,29 +253,43 @@ class ChatbotEngine:
             }
 
             async with httpx.AsyncClient(timeout=30) as client:
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={self.settings.gemini_api_key}"
-                response = await client.post(
-                    url,
-                    headers={"Content-Type": "application/json"},
-                    json=payload
-                )
-
-                if response.status_code == 200:
-                    data = response.json()
-                    candidates = data.get("candidates", [])
-                    if candidates:
-                        content = candidates[0].get("content", {})
-                        parts = content.get("parts", [])
-                        if parts:
-                            text = parts[0].get("text", "")
-                            return ChatResponse(
-                                text=text,
-                                language=language,
-                                confidence=0.9,
-                            )
-                else:
-                    logger.error(f"Gemini API error: {response.status_code} - {response.text}")
-
+                candidate_models = [
+                    "gemini-flash-lite-latest",
+                    "gemini-3.1-flash-lite",
+                    "gemini-3.5-flash-lite",
+                    "gemini-3.5-flash",
+                    "gemini-2.5-flash",
+                ]
+                for model in candidate_models:
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={self.settings.gemini_api_key}"
+                    try:
+                        response = await client.post(
+                            url,
+                            headers={"Content-Type": "application/json"},
+                            json=payload
+                        )
+                        if response.status_code == 200:
+                            data = response.json()
+                            candidates = data.get("candidates", [])
+                            if candidates:
+                                content = candidates[0].get("content", {})
+                                parts = content.get("parts", [])
+                                if parts:
+                                    text = parts[0].get("text", "")
+                                    return ChatResponse(
+                                        text=text,
+                                        language=language,
+                                        confidence=0.9,
+                                    )
+                        elif response.status_code in (429, 503):
+                            logger.warning(f"Gemini chat model {model} rate-limited ({response.status_code}), trying next")
+                        elif response.status_code == 404:
+                            logger.debug(f"Gemini chat model {model} not found (404), trying next")
+                        else:
+                            logger.warning(f"Gemini error on {model}: {response.status_code}")
+                    except Exception as me:
+                        logger.warning(f"Gemini chat model {model} failed: {me}")
+                return None
         except Exception as e:
             logger.error(f"Gemini chat failed: {e}")
 

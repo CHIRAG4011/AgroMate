@@ -92,6 +92,17 @@
       </nav>
 
       <div class="sidebar-footer">
+        <!-- Sidebar Language Switcher Card -->
+        <div class="sidebar-lang-card" onclick="showLanguagePicker()" title="Change Language / भाषा बदलें">
+          <div class="sidebar-lang-left">
+            <span class="sidebar-lang-icon">🌐</span>
+            <div class="sidebar-lang-meta">
+              <span class="sidebar-lang-title" data-i18n="settings_language">Language / भाषा</span>
+              <span class="sidebar-lang-name" id="sidebarLangLabel">हिन्दी (Hindi)</span>
+            </div>
+          </div>
+          <button class="sidebar-lang-pill-btn" onclick="event.stopPropagation(); toggleHindiEnglish();" id="sidebarLangSwitchBtn" title="Toggle Hindi/English">HI</button>
+        </div>
         <!-- Voice Control Indicator -->
         <div class="voice-indicator" id="voiceControlIndicator" style="margin-bottom: var(--space-sm); display: flex; width: fit-content;">
           <span>🎤 Voice Active</span>
@@ -111,6 +122,22 @@
 
     <!-- ── Main Content ── -->
     <main class="main-content" id="mainContent">
+      <!-- ── Top Global Header Bar ── -->
+      <header class="top-nav-bar" id="topNavBar">
+        <div class="top-nav-left">
+          <span class="top-nav-page-title" id="topNavTitle">AgroMate</span>
+        </div>
+        <div class="top-nav-right">
+          <button class="quick-lang-btn" id="quickLangToggleBtn" onclick="toggleHindiEnglish()" title="Switch between Hindi and English">
+            <span id="quickLangToggleLabel">🇮🇳 हिन्दी में बदलें</span>
+          </button>
+          <button class="top-lang-picker-btn" id="topLangPickerBtn" onclick="showLanguagePicker()" title="Select from 23 Languages">
+            <span>🌐</span>
+            <span id="topLangCurrentLabel">हिन्दी (HI)</span>
+            <span style="font-size:0.75rem; opacity:0.7;">▼</span>
+          </button>
+        </div>
+      </header>
       <div class="page-container" id="pageContainer">
         <!-- Dynamic page content rendered here -->
       </div>
@@ -153,16 +180,16 @@
     </div>
   </div>
 
-  <!-- ── Scripts ── -->
-  <script src="js/app.js"></script>
-  <script src="js/pages/dashboard.js"></script>
-  <script src="js/pages/chat.js"></script>
-  <script src="js/pages/scan.js"></script>
-  <script src="js/pages/robots.js"></script>
-  <script src="js/pages/history.js"></script>
-  <script src="js/pages/analytics.js"></script>
-  <script src="js/pages/settings.js"></script>
-  <script src="js/pages/weather.js"></script>
-  <script src="js/pages/knowledge.js"></script>
+  <!-- ── Scripts (Cache-Busted) ── -->
+  <script src="js/app.js?v=3.0"></script>
+  <script src="js/pages/dashboard.js?v=3.0"></script>
+  <script src="js/pages/chat.js?v=3.0"></script>
+  <script src="js/pages/scan.js?v=3.0"></script>
+  <script src="js/pages/robots.js?v=3.0"></script>
+  <script src="js/pages/history.js?v=3.0"></script>
+  <script src="js/pages/analytics.js?v=3.0"></script>
+  <script src="js/pages/settings.js?v=3.0"></script>
+  <script src="js/pages/weather.js?v=3.0"></script>
+  <script src="js/pages/knowledge.js?v=3.0"></script>
 </body>
 </html>

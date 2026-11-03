@@ -442,18 +442,37 @@ async function loadLastScanPreview() {
 }
 
 async function triggerDashboardRobotScan() {
+  // If Web Bluetooth is directly connected in browser, send immediately via BLE
+  if (typeof activeBleService !== 'undefined' && activeBleService) {
+    try {
+      const cmdChar = await activeBleService.getCharacteristic('12345678-1234-5678-1234-56789abcdf81');
+      const msg = new Uint8Array([0xA6, 0xAD, 0x16, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF7, 0x4F]);
+      if (cmdChar.writeValueWithoutResponse) {
+        await cmdChar.writeValueWithoutResponse(msg);
+      } else if (cmdChar.writeValueWithResponse) {
+        await cmdChar.writeValueWithResponse(msg);
+      } else {
+        await cmdChar.writeValue(msg);
+      }
+      showToast('Camera capture requested via BLE!', 'success');
+      return;
+    } catch (e) {
+      console.warn('[BLE] Direct scan command failed, trying backend API:', e);
+    }
+  }
+
   showToast('Fetching active robots...', 'info');
   try {
     const res = await api.get('/robots/');
     if (res && res.robots && res.robots.length > 0) {
-      const connectedRobot = res.robots.find(r => r.connected || r.state === 'active');
+      const connectedRobot = res.robots.find(r => r.connected || r.state === 'active') || res.robots[0];
       if (connectedRobot) {
         showToast(`Triggering camera scan on ${connectedRobot.name}...`, 'info');
         const scanRes = await api.post(`/robots/${connectedRobot.robot_id}/scan`);
         if (scanRes && scanRes.status === 'success') {
-          showToast('Scan command sent successfully!', 'success');
+          showToast('Scan command sent to robot!', 'success');
         } else {
-          showToast('Failed to send scan command', 'error');
+          showToast(scanRes?.detail || 'Failed to send scan command', 'error');
         }
       } else {
         showToast('No active connected robots found!', 'error');

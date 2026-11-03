@@ -1,5 +1,5 @@
 """
-AgroMate Backend — Main FastAPI Application
+AgroMate Backend — Main FastAPI Application (Reloaded)
 
 Entry point for the laptop AI server. Initializes all services,
 starts the BLE server, and serves the REST/WebSocket API.
@@ -18,6 +18,9 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import get_settings
 from .utils.logger import setup_logging
+from .utils.dns_fallback import install_dns_fallback
+
+install_dns_fallback()
 from .database.crud import init_database, close_database
 from .ble.server import BLEServer
 from .api.router import api_router
@@ -42,6 +45,15 @@ async def lifespan(app: FastAPI):
     # Initialize database
     await init_database(settings.database_url)
     logger.info("✅ Database initialized")
+
+    # Initialize default language
+    try:
+        from .voice.languages import set_system_language
+        default_lang = getattr(settings, "default_language", "hi")
+        set_system_language(default_lang)
+        logger.info(f"🌐 Default system language initialized: {default_lang}")
+    except Exception as e:
+        logger.warning(f"Could not initialize default language: {e}")
 
     # Seed default data
     try:
@@ -68,6 +80,10 @@ async def lifespan(app: FastAPI):
 
     # Setup BLE event handlers for AI pipeline
     _setup_ble_pipeline(ble_server, logger)
+
+    # Play Eva intro voice on Bluetooth / system speaker upon AgroMate boot
+    if ble_server:
+        asyncio.create_task(ble_server._play_intro_voice(force=True))
 
     logger.info(f"🌱 AgroMate AI Server ready at http://{settings.host}:{settings.port}")
     logger.info(f"📖 API docs at http://{settings.host}:{settings.port}/docs")
@@ -210,6 +226,8 @@ def _setup_ble_pipeline(server: BLEServer, logger):
             logger.warning("Robot scan: all AI APIs failed. Using local fallback.")
             try:
                 from .ai.plant_detector import PlantDetector
+                from .ai.disease_detector import DiseaseDetector
+                
                 detector = PlantDetector()
                 await detector.initialize()
                 plant_res = await detector.identify(jpeg_data)
@@ -217,18 +235,64 @@ def _setup_ble_pipeline(server: BLEServer, logger):
                     common_name     = plant_res.plant_name
                     scientific_name = plant_res.scientific_name
                     confidence      = plant_res.confidence * 100
-                    scan_context    = {
-                        "scan_type": "identification",
-                        "plant_name": common_name,
-                        "scientific_name": scientific_name,
-                        "is_healthy": True,
-                        "disease_name": "Healthy",
-                    }
+
+                disease_det = DiseaseDetector()
+                await disease_det.initialize()
+                disease_res = await disease_det.diagnose(jpeg_data, plant_name=common_name)
+                
+                if disease_res:
+                    is_healthy = bool(disease_res.is_healthy)
+                    issue = disease_res.disease_name if not is_healthy else "Healthy"
+                    treatment = disease_res.treatment or ""
+                    organic_treatment = disease_res.organic_treatment or ""
+                    severity = disease_res.severity or ("none" if is_healthy else "moderate")
+                else:
+                    is_healthy = True
+                    issue = "Healthy"
+                    treatment = ""
+                    organic_treatment = ""
+                    severity = "none"
+
+                scan_context = {
+                    "scan_type": "disease" if not is_healthy else "identification",
+                    "plant_name": common_name,
+                    "scientific_name": scientific_name,
+                    "is_healthy": is_healthy,
+                    "disease_name": issue,
+                    "severity": severity,
+                    "treatment": treatment,
+                    "organic_treatment": organic_treatment,
+                }
+                scan_result = {
+                    "plant_name": common_name,
+                    "scientific_name": scientific_name,
+                    "confidence": (confidence / 100.0) if confidence > 0 else 0.85,
+                    "is_healthy": is_healthy,
+                    "disease_name": issue,
+                    "severity": severity,
+                    "chemical_treatment": treatment,
+                    "organic_treatment": organic_treatment,
+                    "ai_summary": f"{common_name} local scan complete. Status: {issue}.",
+                }
             except Exception as e:
                 logger.error(f"Local fallback failed: {e}")
 
-        # Build TFT pipe-delimited payload directly from Gemini response (no chatbot overhead)
-        tft_plant   = _clean_for_tft(common_name, 24)
+        # Determine robot and system language
+        from .voice.languages import get_system_language, get_localized_scan_speech, get_localized_tft_data, localize_plant_name, localize_disease_name
+        lang = (robot.config.get("language") if hasattr(robot, 'config') and robot.config else None) or get_system_language() or "en"
+        logger.info(f"🌐 Robot scan language active: {lang}")
+
+        # Build TFT payload formatted with readable localization
+        tft_data = get_localized_tft_data(
+            plant_name=common_name,
+            disease_name=issue if not is_healthy else "Healthy",
+            is_healthy=is_healthy,
+            severity=scan_context.get("severity", "moderate"),
+            tips=scan_result.get("organic_treatment", "") or scan_result.get("chemical_treatment", "") if scan_result else "",
+            language=lang,
+        )
+
+        tft_plant   = _clean_for_tft(tft_data["plant"], 24)
         tft_sci     = _clean_for_tft(scientific_name, 40)
         tft_conf    = f"{min(confidence, 100.0):.1f}"
         tft_summary = _clean_for_tft(
@@ -237,8 +301,6 @@ def _setup_ble_pipeline(server: BLEServer, logger):
 
         if not is_healthy and issue.lower() not in ("healthy", "none", ""):
             severity     = scan_context.get("severity", "moderate")
-            organic      = scan_context.get("organic_treatment", "")
-            chemical     = scan_context.get("treatment", "")
             disease_raw  = scan_context.get("disease_name", issue)
 
             # Get symptoms directly from Gemini (semicolon-separated)
@@ -253,59 +315,52 @@ def _setup_ble_pipeline(server: BLEServer, logger):
             if scan_result and scan_result.get("health_score"):
                 health_score = int(scan_result["health_score"])
 
-            # Treatment: organic first (semicolons), then chemical fallback
-            treatment_combined = organic if organic else chemical
-            tft_treatment = _clean_for_tft(treatment_combined, 80)
-            tft_disease   = _clean_for_tft(disease_raw, 28)
-            tft_severity  = _clean_for_tft(severity, 12)
+            tft_treatment = _clean_for_tft(tft_data["tips"], 80)
+            tft_disease   = _clean_for_tft(tft_data["disease"], 28)
+            tft_severity  = _clean_for_tft(tft_data["severity"], 12)
 
             display_text = f"D|{tft_plant}|{tft_sci}|{tft_conf}|{tft_disease}|{tft_severity}|{health_score}|{symptoms}|{tft_treatment}|{tft_summary}"
         else:
             health_score = 95
-            if scan_result:
-                organic_tips = scan_result.get("organic_treatment", "")
-                chem_tips    = scan_result.get("chemical_treatment", "")
-                tips_raw     = organic_tips or chem_tips
-            else:
-                tips_raw = scan_context.get("organic_treatment", "") or scan_context.get("treatment", "")
-            tft_tips = _clean_for_tft(tips_raw, 80) if tips_raw else "Water regularly;Ensure sunlight;Check soil pH;Apply compost"
+            tft_tips = _clean_for_tft(tft_data["tips"], 80)
             display_text = f"H|{tft_plant}|{tft_sci}|{tft_conf}|{health_score}|{tft_tips}"
 
-        expression = FaceExpression.HAPPY if is_healthy else FaceExpression.WARNING
-
-        # Build concise, clear spoken text for speech synthesis
+        # Build concise, clear spoken text for speech synthesis in the active language
         conf_pct = int(confidence) if confidence else 0
-        response_text = f"Scan complete. The scanned plant is {common_name}"
-        if scientific_name and scientific_name != "N/A":
-            response_text += f", scientific name {scientific_name}"
-        response_text += f", with {conf_pct} percent confidence. "
-        if is_healthy:
-            response_text += "No diseases detected. Your plant looks healthy!"
-        else:
-            response_text += f"Detected {issue}. "
-            treatment_val = scan_context.get("organic_treatment", "") or scan_context.get("treatment", "")
-            if treatment_val:
-                first_tip = treatment_val.split(';')[0]
-                response_text += f"Recommended treatment: {first_tip}. "
-        response_text += "Visit the app for details."
-        logger.info(f"🗣️ TTS response: {response_text}")
+        is_low_conf = conf_pct < 35 or common_name.lower() in ("unknown", "unknown plant", "unidentified", "n/a")
+        expression = FaceExpression.THINKING if is_low_conf else (FaceExpression.HAPPY if is_healthy else FaceExpression.WARNING)
 
-        # Get robot language for TTS
-        lang = robot.config.get("language", "en") if hasattr(robot, 'config') and robot.config else "en"
+        short_speech = get_localized_scan_speech(
+            plant_name=common_name,
+            disease_name=issue,
+            is_healthy=is_healthy,
+            is_low_conf=is_low_conf,
+            conf_pct=conf_pct,
+            language=lang,
+        )
+        logger.info(f"🗣️ [{lang}] Localized TTS speech: {short_speech}")
 
         # Send structured data to the robot display
         await server.send_ai_response(robot.robot_id, display_text, expression)
         
-        # Start speech synthesis & BLE streaming IMMEDIATELY in background (zero delay!)
+        # Start speech synthesis & BLE / Bluetooth streaming in background
         async def speak_in_background():
             try:
                 from .voice.synthesizer import VoiceSynthesizer
                 synthesizer = VoiceSynthesizer()
                 await synthesizer.initialize()
-                speech = await synthesizer.synthesize(response_text, language=lang, compress_for_robot=True)
-                if speech:
-                    logger.info(f"🔊 Sending {len(speech.audio_data)} bytes of speech to robot...")
-                    await server.send_speech_audio(robot.robot_id, speech.audio_data)
+                # Edge-TTS has native Microsoft Neural voice support for all 23 Indian languages
+                # Gemini TTS also supports Hindi; avoid ElevenLabs on non-English
+                speech_engine = "edge-tts" if lang != "en" else "elevenlabs"
+                speech = await synthesizer.synthesize(
+                    short_speech,
+                    language=lang,
+                    engine=speech_engine,
+                    compress_for_robot=True
+                )
+                if speech and speech.audio_data:
+                    logger.info(f"🔊 Sending localized speech ({len(speech.audio_data)} bytes, lang={lang}) to robot & Bluetooth speaker...")
+                    await server.send_speech_audio(robot.robot_id, speech.audio_data, play_local_speaker=True)
             except Exception as se:
                 logger.error(f"Background speech synthesis failed: {se}")
 
@@ -329,7 +384,7 @@ def _setup_ble_pipeline(server: BLEServer, logger):
                     user_id=None,
                     robot_id=db_robot_id
                 )
-                if auto_result or scan_context:
+                if scan_result or scan_context:
                     disease_name_val = scan_context.get("disease_name") or scan_context.get("issue_detected") or issue
                     severity_val = scan_context.get("severity") or "none"
                     treatment_val = scan_context.get("treatment") or ""
@@ -559,6 +614,20 @@ def _setup_ble_pipeline(server: BLEServer, logger):
     # Register handlers
     server.on_image_received(on_image_received)
     server.on_audio_received(on_audio_received)
+
+    async def on_error_reported(robot, err_msg: str):
+        try:
+            from .api.websocket import manager as ws_manager
+            await ws_manager.broadcast({
+                "type": "robot_error",
+                "robot_id": robot.robot_id,
+                "robot_name": robot.name,
+                "error": err_msg,
+            })
+        except Exception as e:
+            logger.debug(f"Failed to broadcast robot error: {e}")
+
+    server.on_error_report(on_error_reported)
 
 
 # ── Create FastAPI App ──

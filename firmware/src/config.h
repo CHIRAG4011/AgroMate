@@ -4,7 +4,7 @@
 // ============================================
 // Board: ESP32-S3 DevKitC-1 (8MB Flash, No PSRAM)
 // Display: 3.5" RM68140 320x480 8-bit Parallel TFT
-// Camera: OV7670 (parallel, no JPEG encoder)
+// Camera: ESP32 cam module 2 (OV2640, hardware JPEG, connected via UART)
 // Audio In: INMP441 I2S MEMS Microphone
 // Audio Out: MAX98357A I2S DAC + Class-D Amplifier
 // ============================================
@@ -12,10 +12,11 @@
 // ── Board Selection ──
 #define BOARD_ESP32_S3
 
-// ── Display (RM68140 480x320 8-bit Parallel TFT) ──
-// Physical screen dimensions (landscape after rotation)
-#define SCREEN_WIDTH 480
-#define SCREEN_HEIGHT 320
+// ── Display (RM68140 320x480 8-bit Parallel TFT) ──
+// Physical screen dimensions (Portrait mode)
+#define SCREEN_ROTATION 0   // 0 = Portrait (320x480), 2 = Inverted Portrait
+#define SCREEN_WIDTH 320
+#define SCREEN_HEIGHT 480
 
 // Face sprite dimensions (rendered in center of screen)
 // 320x160 @ 16-bit = 100KB — fits comfortably in internal SRAM
@@ -35,35 +36,26 @@
 
 // TFT control pins
 #define TFT_WR_PIN 47  // Write strobe
-#define TFT_RD_PIN -1  // Read strobe (not connected — write-only)
+#define TFT_RD_PIN 20  // Read strobe (GPIO 20, driven HIGH before TFT init)
 #define TFT_DC_PIN 38  // Data/Command (a.k.a. RS)
 #define TFT_CS_PIN 21  // Chip Select
 #define TFT_RST_PIN 14 // Hardware reset
 #define TFT_BL_PIN -1  // Backlight (hardwired to VCC)
 
-// ── Camera (OV7670 — 8-bit parallel + SCCB/I2C) ──
-#define CAMERA_MODEL_OV7670
-
-#define CAM_PIN_PWDN -1  // Not connected (tie to GND)
-#define CAM_PIN_RESET -1 // Physically tied to 3.3V
-#define CAM_PIN_XCLK 10  // Master clock output
-#define CAM_PIN_SIOD 8   // SCCB Data (I2C SDA)
-#define CAM_PIN_SIOC 9   // SCCB Clock (I2C SCL)
-#define CAM_PIN_D7 18    // Data bit 7
-#define CAM_PIN_D6 17    // Data bit 6
-#define CAM_PIN_D5 16    // Data bit 5
-#define CAM_PIN_D4 15    // Data bit 4
-#define CAM_PIN_D3 7     // Data bit 3
-#define CAM_PIN_D2 6     // Data bit 2
-#define CAM_PIN_D1 5     // Data bit 1
-#define CAM_PIN_D0 4     // Data bit 0
-#define CAM_PIN_VSYNC 12 // Vertical sync
-#define CAM_PIN_HREF 11  // Horizontal reference
-#define CAM_PIN_PCLK 13  // Pixel clock
+// ── Camera (ESP32 cam module 2 via UART) ──
+// The ESP32 cam module 2 is a separate microcontroller (ESP32 + OV2640) that handles
+// camera initialization and hardware JPEG encoding internally.
+// Communication is via high-speed UART — main board sends commands, receives JPEG.
+#define CAMERA_MODEL_ESP32CAM
+#define CAMERA_MODEL_ESP32CAM_2
+#define ESP32CAM_UART_RX 4       // ESP32-S3 receives JPEG data from ESP32-CAM TX
+#define ESP32CAM_UART_TX 5       // ESP32-S3 sends commands to ESP32-CAM RX
+#define ESP32CAM_BAUD    460800  // 460.8 Kbps — reliable on breadboard wiring
+#define ESP32CAM_UART_NUM 2      // Use HardwareSerial (Serial2)
+// Pins 6-18 are now FREE (previously used by OV7670 parallel bus)
 
 // ── Audio I2S (Dedicated pins for Mic and Speaker) ──
-#define MIC_I2S_PORT I2S_NUM_0
-#define SPK_I2S_PORT I2S_NUM_1
+#define AUDIO_I2S_PORT I2S_NUM_1
 
 // INMP441 Microphone (I2S RX)
 #define MIC_I2S_BCLK 2      // Microphone Bit Clock
@@ -78,8 +70,9 @@
 #define AUDIO_BUFFER_SIZE 1024
 
 // ── Buttons ──
-#define BTN_MODE 0 // BOOT button on DevKitC-1 (dedicated — no conflicts)
-// Scan and Talk functions triggered via BLE from phone/laptop app
+#define BTN_MODE 0         // On-board BOOT button (GPIO 0: toggle screen / hold for scan)
+#define BTN_EXTERNAL_PIN 7 // Dedicated External Push Button (GPIO 7: instant camera image capture)
+// Scan and Talk functions also triggerable via BLE from phone/laptop app
 
 // ── Battery Monitor ──
 // No dedicated ADC pin available — all GPIOs allocated to peripherals.
@@ -106,9 +99,9 @@
 // ── Timing ──
 #define HEARTBEAT_INTERVAL_MS 5000
 #define SENSOR_READ_INTERVAL_MS 10000
-#define DISPLAY_FPS 30
+#define DISPLAY_FPS 40
 #define IDLE_SLEEP_TIMEOUT_MS 300000 // 5 minutes
-#define BLINK_MIN_INTERVAL_MS 6000
+#define BLINK_MIN_INTERVAL_MS 3000
 #define BLINK_MAX_INTERVAL_MS 15000
 
 // ── FreeRTOS Task Priorities ──

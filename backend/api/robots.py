@@ -29,14 +29,62 @@ async def get_robot_status(robot_id: str):
     return {"status": "error", "detail": "Robot not found"}
 
 
+@router.post("/discover")
+async def discover_robots():
+    """Trigger an immediate BLE discovery scan."""
+    from ..main import ble_server
+    if ble_server and ble_server.discovery:
+        discovered = await ble_server.discovery.scan_once()
+        return {
+            "status": "success",
+            "found": len(discovered),
+            "robots": [{"address": d.address, "name": d.name} for d in discovered],
+        }
+    return {"status": "error", "detail": "BLE discovery unavailable"}
+
+
+@router.post("/{robot_id}/connect")
+async def connect_robot(robot_id: str):
+    """Connect to a robot over BLE."""
+    from ..main import ble_server
+    if not ble_server:
+        return {"status": "error", "detail": "BLE server not running"}
+    
+    connected = await ble_server.connect_to_robot(robot_id)
+    if connected:
+        robot = ble_server.connection_manager.get_robot(robot_id)
+        return {"status": "success", "message": "Connected", "robot": robot.to_dict() if robot else None}
+    
+    robot = ble_server.connection_manager.get_robot(robot_id)
+    err = robot.last_error if robot and robot.last_error else "Could not establish BLE connection"
+    return {"status": "error", "detail": err}
+
+
+@router.post("/{robot_id}/disconnect")
+async def disconnect_robot(robot_id: str):
+    """Disconnect a robot over BLE."""
+    from ..main import ble_server
+    if not ble_server:
+        return {"status": "error", "detail": "BLE server not running"}
+    
+    await ble_server.disconnect_robot(robot_id)
+    return {"status": "success", "message": "Disconnected"}
+
+
 @router.post("/{robot_id}/scan")
 async def trigger_scan(robot_id: str):
     """Trigger a camera scan on a robot."""
     from ..main import ble_server
-    if ble_server:
-        await ble_server.request_camera_capture(robot_id)
+    if not ble_server:
+        return {"status": "error", "detail": "BLE server not running"}
+    
+    robot = ble_server.connection_manager.get_robot(robot_id)
+    success = await ble_server.request_camera_capture(robot_id)
+    if success:
         return {"status": "success", "message": "Capture requested"}
-    return {"status": "error", "detail": "BLE server not running"}
+    
+    err_detail = robot.last_error if robot and robot.last_error else "Device offline or unreachable"
+    return {"status": "error", "detail": f"Failed to send capture command: {err_detail}"}
 
 
 @router.post("/{robot_id}/speak")
@@ -140,3 +188,12 @@ async def update_robot_config(robot_id: str, config: dict):
             robot.config.update(config)
             return {"status": "success", "message": "Robot config updated", "config": robot.config}
     return {"status": "error", "detail": "Robot not found"}
+
+@router.post("/{robot_id}/intro-voice")
+async def play_intro_voice_endpoint(robot_id: str):
+    """Play the Eva intro voice on Bluetooth speaker / system audio."""
+    from ..main import ble_server
+    if not ble_server:
+        return {"status": "error", "detail": "BLE server not running"}
+    await ble_server._play_intro_voice(force=True)
+    return {"status": "success", "message": "Intro voice started on Bluetooth"}

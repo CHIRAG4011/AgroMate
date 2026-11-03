@@ -56,6 +56,8 @@ class Settings(BaseSettings):
     tts_voice_hi: str = "hi-IN-SwaraNeural"
     tts_voice_gu: str = "gu-IN-DhwaniNeural"
     tts_sample_rate: int = 16000
+    tts_rate: str = "+22%"
+    default_language: str = "hi"
     elevenlabs_api_key: str = ""
     elevenlabs_voice_id: str = "EXAVITQu4vr4xnSDxMaL"
 

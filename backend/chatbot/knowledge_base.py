@@ -8,7 +8,7 @@ for context-aware responses about plants, diseases, and farming.
 import logging
 
 
-from ..database.seed import COMMON_PLANTS, COMMON_DISEASES, NUTRIENT_DEFICIENCIES
+from ..database.seed import COMMON_PLANTS, COMMON_DISEASES, NUTRIENT_DEFICIENCIES, COMMON_PESTS
 
 logger = logging.getLogger(__name__)
 
@@ -70,6 +70,22 @@ class PlantKnowledgeBase:
                 "info": f"{nutrient['nutrient']} deficiency: {nutrient['symptoms']}",
                 "treatment": nutrient.get("treatment", ""),
                 "organic": nutrient.get("organic_option", ""),
+            })
+
+        # Index agricultural pests
+        for pest in COMMON_PESTS:
+            self._entries.append({
+                "topic": f"Pest: {pest['pest']}",
+                "type": "pest",
+                "keywords": [
+                    pest["pest"].lower(),
+                    *pest.get("crops_affected", "").lower().split(", "),
+                    *pest.get("symptoms", "").lower().split(),
+                ],
+                "info": f"{pest['pest']} (affects {pest.get('crops_affected', 'crops')}): {pest['symptoms']}",
+                "treatment": pest.get("treatment", ""),
+                "organic": pest.get("organic_treatment", ""),
+                "prevention": pest.get("prevention", ""),
             })
 
         self._initialized = True

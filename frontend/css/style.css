@@ -868,6 +868,14 @@ select.input option {
   animation: voicePulse 1s infinite;
 }
 
+/* Chat bubble timestamp */
+.chat-bubble-time {
+  font-size: 0.65rem;
+  color: var(--text-tertiary);
+  margin-top: 4px;
+  opacity: 0.7;
+}
+
 .typing-indicator {
   display: flex;
   gap: 4px;
@@ -1340,11 +1348,7 @@ select.input option {
 .hidden { display: none !important; }
 .mobile-logo-img { height: 28px; }
 
-/* ── RTL global safety reset ── */
-[dir="rtl"] {
-  transform: none !important;
-  direction: rtl !important;
-}
+/* ── RTL direction support (no longer breaks transforms) ── */
 [dir="rtl"] body, [dir="rtl"] .app-layout {
   direction: rtl !important;
 }
@@ -1367,4 +1371,279 @@ select.input option {
   0% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4); }
   70% { box-shadow: 0 0 0 6px rgba(34, 197, 94, 0); }
   100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0); }
+}
+
+/* ============================================================
+   EMPTY STATE CLASSES (used by robots page, etc.)
+   ============================================================ */
+.empty-icon {
+  font-size: 4rem;
+  display: block;
+  margin-bottom: var(--space-md);
+  opacity: 0.7;
+}
+.empty-title {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  margin-bottom: var(--space-sm);
+}
+.empty-text {
+  font-size: 0.85rem;
+  color: var(--text-tertiary);
+  max-width: 400px;
+  margin: 0 auto;
+  line-height: 1.5;
+}
+
+/* ============================================================
+   TABLE STYLES (history page, analytics, etc.)
+   ============================================================ */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.9rem;
+}
+.data-table thead tr {
+  border-bottom: 2px solid var(--border-subtle);
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.02);
+}
+.data-table th {
+  padding: 14px var(--space-md);
+  font-weight: 600;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.data-table td {
+  padding: 12px var(--space-md);
+}
+.data-table tbody tr {
+  border-bottom: 1px solid var(--border-subtle);
+  transition: background var(--duration-fast);
+}
+.data-table tbody tr:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+[data-theme="light"] .data-table tbody tr:hover {
+  background: rgba(0, 0, 0, 0.02);
+}
+[data-theme="light"] .data-table thead tr {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+/* ============================================================
+   TOAST NOTIFICATIONS
+   ============================================================ */
+.toast {
+  position: fixed;
+  bottom: 96px;
+  right: 24px;
+  padding: 12px 20px;
+  border-radius: 12px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  z-index: 9999;
+  animation: toastSlideIn 0.3s var(--ease-spring);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-subtle);
+  max-width: 400px;
+  pointer-events: auto;
+  box-shadow: var(--shadow-lg);
+}
+.toast.toast-exit {
+  animation: toastSlideOut 0.3s var(--ease-out) forwards;
+}
+@keyframes toastSlideIn {
+  from { opacity: 0; transform: translateY(16px) scale(0.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes toastSlideOut {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(16px) scale(0.9); }
+}
+
+/* ── Robot Status Modal ── */
+.robot-status-modal {
+  max-width: 480px;
+}
+.robot-status-modal .status-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: 0.9rem;
+}
+.robot-status-modal .status-row:last-child {
+  border-bottom: none;
+}
+.robot-status-modal .status-label {
+  color: var(--text-tertiary);
+  font-size: 0.85rem;
+}
+.robot-status-modal .status-value {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+/* ── Touch device hover fix ── */
+@media (hover: none) and (pointer: coarse) {
+  .card:hover {
+    transform: none;
+    box-shadow: none;
+    border-color: inherit;
+  }
+  .nav-item:hover {
+    transform: none;
+  }
+}
+
+/* ── Chat textarea auto-resize helper ── */
+.chat-input-auto {
+  overflow: hidden;
+  transition: height 0.15s ease;
+}
+
+
+/* ── Top Global Header Bar ── */
+.top-nav-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 28px;
+  background: rgba(18, 24, 38, 0.75);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  position: sticky;
+  top: 0;
+  z-index: 95;
+}
+
+.top-nav-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.top-nav-page-title {
+  font-weight: 700;
+  font-size: 1.15rem;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+.top-nav-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.quick-lang-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 16px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #2e7d32, #1b5e20);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 10px rgba(46, 125, 50, 0.35);
+}
+
+.quick-lang-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(46, 125, 50, 0.5);
+  background: linear-gradient(135deg, #388e3c, #2e7d32);
+}
+
+.top-lang-picker-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 15px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  font-size: 0.88rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.top-lang-picker-btn:hover {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+/* ── Sidebar Language Card ── */
+.sidebar-lang-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.sidebar-lang-card:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--accent-primary, #4caf50);
+}
+
+.sidebar-lang-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sidebar-lang-icon {
+  font-size: 1.25rem;
+}
+
+.sidebar-lang-meta {
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-lang-title {
+  font-size: 0.72rem;
+  color: var(--text-tertiary, #888);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.sidebar-lang-name {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.sidebar-lang-pill-btn {
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: var(--accent-primary, #4caf50);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.sidebar-lang-pill-btn:hover {
+  opacity: 0.85;
 }

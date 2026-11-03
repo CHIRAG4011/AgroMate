@@ -11,7 +11,7 @@ const WS_BASE  = window.location.origin.replace('http', 'ws');
 // ── App State ──
 let currentPage = 'dashboard';
 let theme = localStorage.getItem('agromate-theme') || 'dark';
-let currentLanguage = localStorage.getItem('agromate-lang') || 'en';
+let currentLanguage = (new URLSearchParams(window.location.search).get('lang')) || localStorage.getItem('agromate-lang') || 'hi';
 let accessibilityMode = localStorage.getItem('agromate-a11y') || 'normal';
 let colorblindMode = localStorage.getItem('agromate-colorblind') || 'false';
 
@@ -55,6 +55,14 @@ document.addEventListener('DOMContentLoaded', async () => {
    INTERNATIONALIZATION (i18n) MODULE
    ============================================================ */
 
+
+// ── Global Language Toggle Helper ──
+window.toggleHindiEnglish = async function() {
+  const target = (currentLanguage === 'hi') ? 'en' : 'hi';
+  await i18n.setLanguage(target);
+  showToast(target === 'hi' ? '🇮🇳 भाषा बदलकर हिन्दी कर दी गई है।' : '🌐 Language changed to English', 'success');
+};
+
 const i18n = {
   languages: [],
   
@@ -74,6 +82,13 @@ const i18n = {
     currentLanguage = langCode;
     localStorage.setItem('agromate-lang', langCode);
     
+    // Sync active language to backend and all connected robots
+    try {
+      if (typeof api !== 'undefined' && api.post) {
+        api.post('/i18n/set-language', { language: langCode }).catch(e => console.debug('Sync lang err:', e));
+      }
+    } catch (e) {}
+
     // Fetch translation bundle
     try {
       const data = await api.get(`/i18n/translations/${langCode}`);
@@ -85,12 +100,25 @@ const i18n = {
         const dir = rtlLanguages.includes(langCode) ? 'rtl' : 'ltr';
         document.documentElement.setAttribute('dir', dir);
         
-        // Update language indicator flag/text
+        // Update all language indicator flags and buttons across the interface
+        const langInfo = this.languages.find(l => l.code === langCode);
+        const nativeName = langInfo ? langInfo.native : (langCode === 'hi' ? 'हिन्दी' : 'English');
+        const engName = langInfo ? langInfo.name : (langCode === 'hi' ? 'Hindi' : 'English');
+
         const langFlag = document.getElementById('currentLangFlag');
-        if (langFlag) {
-          const langInfo = this.languages.find(l => l.code === langCode);
-          langFlag.textContent = langInfo ? langInfo.native : '🌐';
-        }
+        if (langFlag) langFlag.textContent = nativeName;
+
+        const topLabel = document.getElementById('topLangCurrentLabel');
+        if (topLabel) topLabel.textContent = `${nativeName} (${langCode.toUpperCase()})`;
+
+        const quickToggle = document.getElementById('quickLangToggleLabel');
+        if (quickToggle) quickToggle.textContent = (langCode === 'hi') ? 'Switch to English' : '🇮🇳 हिन्दी में बदलें';
+
+        const sidebarLabel = document.getElementById('sidebarLangLabel');
+        if (sidebarLabel) sidebarLabel.textContent = `${nativeName} (${engName})`;
+
+        const sidebarBtn = document.getElementById('sidebarLangSwitchBtn');
+        if (sidebarBtn) sidebarBtn.textContent = (langCode === 'hi') ? 'EN' : 'HI';
         
         // Translate all nodes having data-i18n attribute
         this.translateDOM();
@@ -199,7 +227,7 @@ class TTSPlayer {
         
         const langMap = { hi: 'hi-IN', gu: 'gu-IN', mr: 'mr-IN', ta: 'ta-IN', te: 'te-IN', bn: 'bn-IN', pa: 'pa-IN', ur: 'ur-PK' };
         utterance.lang = langMap[language] || 'en-IN';
-        utterance.rate = 1.0;
+        utterance.rate = 1.15; // Fast, clear, crisp speech rate
 
         utterance.onstart = () => {
           this.isPlaying = true;
@@ -590,17 +618,36 @@ function navigateTo(page) {
   container.offsetHeight; // reflow
   container.style.animation = 'fadeInPage 0.4s ease';
   
-  switch (page) {
-    case 'dashboard':  renderDashboard(container); break;
-    case 'chat':       renderChat(container); break;
-    case 'scan':       renderScan(container); break;
-    case 'weather':    renderWeather(container); break;
-    case 'robots':     renderRobots(container); break;
-    case 'history':    renderHistory(container); break;
-    case 'analytics':  renderAnalytics(container); break;
-    case 'knowledge':  renderKnowledge(container); break;
-    case 'settings':   renderSettings(container); break;
-    default:           renderDashboard(container); break;
+  try {
+    switch (page) {
+      case 'dashboard':  renderDashboard(container); break;
+      case 'chat':       renderChat(container); break;
+      case 'scan':       renderScan(container); break;
+      case 'weather':    renderWeather(container); break;
+      case 'robots':     renderRobots(container); break;
+      case 'history':    renderHistory(container); break;
+      case 'analytics':  renderAnalytics(container); break;
+      case 'knowledge':  renderKnowledge(container); break;
+      case 'settings':   renderSettings(container); break;
+      default:           renderDashboard(container); break;
+    }
+  } catch (err) {
+    console.error(`[Router] Error rendering page '${page}':`, err);
+    container.innerHTML = `
+      <div class="card" style="padding:var(--space-2xl);text-align:center;">
+        <div style="font-size:3rem;margin-bottom:var(--space-md);">⚠️</div>
+        <h2>Page Load Error</h2>
+        <p style="color:var(--text-secondary);margin-top:var(--space-sm);">
+          Failed to load the <strong>${page}</strong> page. Please try refreshing the browser.
+        </p>
+        <p style="color:var(--text-muted);font-size:var(--font-size-sm);margin-top:var(--space-xs);">
+          ${err.message || 'Unknown error'}
+        </p>
+        <button class="btn btn-primary" style="margin-top:var(--space-lg);" onclick="location.reload()">
+          🔄 Reload Page
+        </button>
+      </div>
+    `;
   }
 }
 
@@ -745,6 +792,8 @@ function applyTheme(t) {
   theme = t;
   document.documentElement.setAttribute('data-theme', t);
   localStorage.setItem('agromate-theme', t);
+  // Refresh chart color cache for Canvas rendering
+  setTimeout(refreshChartColors, 50);
 }
 
 function applyAccessibility(mode) {
@@ -804,6 +853,27 @@ async function checkServerStatus() {
    UTILITIES
    ============================================================ */
 
+// ── CSS Variable Resolver for Canvas 2D (CSS vars don't work in Canvas API) ──
+function getCSSVar(varName) {
+  return getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+}
+
+// Precomputed color cache (refreshed on theme change)
+let _chartColors = {};
+function refreshChartColors() {
+  _chartColors = {
+    accent: getCSSVar('--accent-primary') || '#00ff87',
+    accentSec: getCSSVar('--accent-secondary') || '#00e5ff',
+    text: getCSSVar('--text-primary') || '#f3f4f6',
+    textSec: getCSSVar('--text-secondary') || '#00e5ff',
+    textTert: getCSSVar('--text-tertiary') || '#9ca3af',
+    success: getCSSVar('--color-success') || '#00ff87',
+    danger: getCSSVar('--color-danger') || '#ff4d4d',
+    warning: getCSSVar('--color-warning') || '#fbbf24',
+    bgInput: getCSSVar('--bg-input') || 'rgba(255,255,255,0.05)',
+  };
+}
+
 function formatTime(date) {
   return new Date(date).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
@@ -834,20 +904,22 @@ function escapeHtml(text) {
 function formatMessage(text) {
   if (!text) return '';
   let html = escapeHtml(text);
+  
+  // Line breaks first (before block-level processing)
+  html = html.replace(/\n/g, '<br>');
+  
+  // Headers conversion FIRST (before bold/italic to avoid conflicts)
+  html = html.replace(/### (.*?)(<br>|$)/g, '<h5 style="margin-top:12px;margin-bottom:6px;color:var(--text-secondary);font-size:0.9rem;">$1</h5>');
+  html = html.replace(/## (.*?)(<br>|$)/g, '<h4 style="margin-top:16px;margin-bottom:8px;color:var(--accent-secondary);">$1</h4>');
+  
   // Bold
   html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
   // Italic
   html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
   // Code inline
   html = html.replace(/`(.*?)`/g, '<code style="background:var(--bg-input);padding:2px 6px;border-radius:4px;font-size:0.85em;">$1</code>');
-  // Markdown links
-  html = html.replace(/\[(.*?)\]\((.*?)\)/g, '<a href="$2" target="_blank">$1</a>');
-  // Line breaks
-  html = html.replace(/\n/g, '<br>');
-  
-  // Headers conversion (V2 Detailed Response)
-  html = html.replace(/### (.*?)(<br>|$)/g, '<h5 style="margin-top:12px;margin-bottom:6px;color:var(--text-secondary);font-size:0.9rem;">$1</h5>');
-  html = html.replace(/## (.*?)(<br>|$)/g, '<h4 style="margin-top:16px;margin-bottom:8px;color:var(--accent-secondary);">$1</h4>');
+  // Markdown links (sanitize URL to prevent XSS)
+  html = html.replace(/\[(.*?)\]\(((?:https?:\/\/)[^)]*?)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
   
   // Numbered lists (1. 2. 3.)
   html = html.replace(/(\d+)\.\s+(.*?)(<br>|$)/g, '<div style="display:flex;gap:6px;margin:2px 0;"><span style="color:var(--accent-primary);font-weight:600;min-width:18px;">$1.</span><span>$2</span></div>');
@@ -857,41 +929,29 @@ function formatMessage(text) {
   return html;
 }
 
-// Toast notifications
+// Toast notifications — positioned above the FAB button, with smooth exit
 function showToast(message, type = 'info') {
   const existing = document.querySelector('.toast');
-  if (existing) existing.remove();
+  if (existing) {
+    existing.remove();
+  }
   
   const toast = document.createElement('div');
   toast.className = 'toast';
-  toast.style.cssText = `
-    position: fixed;
-    bottom: 24px;
-    right: 24px;
-    padding: 12px 20px;
-    border-radius: 12px;
-    font-size: 0.875rem;
-    font-weight: 500;
-    z-index: 1000;
-    animation: slideInBubble 0.3s ease;
-    backdrop-filter: blur(12px);
-    border: 1px solid var(--border-subtle);
-    max-width: 400px;
-  `;
   
-  const colors = {
+  const colorMap = {
     success: 'background: hsla(142,71%,45%,0.15); color: var(--color-success); border-color: hsla(142,71%,45%,0.3);',
     error:   'background: hsla(0,84%,60%,0.15); color: var(--color-danger); border-color: hsla(0,84%,60%,0.3);',
     warning: 'background: hsla(45,93%,47%,0.15); color: var(--color-warning); border-color: hsla(45,93%,47%,0.3);',
     info:    'background: hsla(217,91%,60%,0.15); color: var(--color-info); border-color: hsla(217,91%,60%,0.3);',
   };
   
-  toast.style.cssText += colors[type] || colors.info;
+  toast.style.cssText = colorMap[type] || colorMap.info;
   toast.textContent = message;
   document.body.appendChild(toast);
   
   setTimeout(() => {
-    toast.style.animation = 'slideUpBar 0.3s ease reverse';
+    toast.classList.add('toast-exit');
     setTimeout(() => toast.remove(), 300);
   }, 3000);
 }
@@ -979,6 +1039,22 @@ function initGlobalVoiceCommander() {
     const cmdAnalytics = ['analytics', 'विश्लेषण', 'એનાલิตિક્સ'];
     const cmdSettings = ['settings', 'सेटिंग्स', 'સેટિંગ્સ', 'سيٽિંગون', 'ترتیبات'];
     
+    // Language switch voice commands
+    const cmdSwitchHindi = ['hindi', 'हिंदी', 'हिन्दी', 'hindi language', 'change to hindi', 'switch to hindi', 'हिंदी करो', 'हिंदी बोलो', 'हिंदी भाषा'];
+    const cmdSwitchEnglish = ['english', 'अंग्रेजी', 'english language', 'change to english', 'switch to english'];
+    if (matches(cmdSwitchHindi)) {
+      i18n.setLanguage('hi');
+      showToast('🇮🇳 भाषा बदलकर हिन्दी कर दी गई है।', 'success');
+      if (typeof ttsPlayer !== 'undefined') ttsPlayer.play('भाषा बदलकर हिन्दी कर दी गई है।', 'hi');
+      return;
+    }
+    if (matches(cmdSwitchEnglish)) {
+      i18n.setLanguage('en');
+      showToast('🌐 Language changed to English', 'success');
+      if (typeof ttsPlayer !== 'undefined') ttsPlayer.play('Language changed to English', 'en');
+      return;
+    }
+
     // Robot Action commands
     const cmdRobotScan = ['scan now', 'take photo', 'start scan', 'स्कैन चालू', 'फोटो खींचो', 'સ્કેન શરૂ', 'ફોટો લો', 'સ્કેન કરો'];
     const cmdTestVoice = ['test voice', 'voice test', 'आवाज टेस्ट', 'ટેસ્ટ વોઈસ', 'परीक्षण'];
@@ -1129,6 +1205,15 @@ function initLiveScanSocket() {
   // Connect to ws/robot/all to listen for global scan_complete events
   wsManager.connect('ws/robot/all', (message) => {
     console.log('[WS] Received global message:', message);
+    if (message.type === 'robot_error') {
+      const err = message.error || '';
+      if (err.includes('CAP: NULL') || err.includes('CAPTURE FAILED') || err.includes('CAM UART no reply')) {
+        showToast('⚠️ Robot Camera: No image returned. Check ESP32-CAM 5V wiring & flash, or use Web Camera on Scan page.', 'error', 6000);
+      } else {
+        showToast(`⚠️ Robot Error: ${err}`, 'warning', 4000);
+      }
+      return;
+    }
     if (message.type === 'scan_complete') {
       showToast(`Scan complete: ${message.plant_name} (${message.is_healthy ? 'Healthy' : 'Diseased'})`, 'success');
       

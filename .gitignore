@@ -19,12 +19,13 @@ env/
 .env
 *.log
 
-# ---------- PlatformIO ----------
+# ---------- PlatformIO & C/C++ ----------
 .pio/
 .pioenvs/
 .piolibdeps/
 .clang_complete
 .gcc-flags.json
+*.obj
 
 # ---------- Arduino ----------
 *.elf
@@ -59,9 +60,7 @@ desktop.ini
 
 # ---------- Data & Models ----------
 datasets/
-models/
 *.tflite
-*.onnx
 *.h5
 *.pt
 *.pth
@@ -72,6 +71,7 @@ models/
 *.wav
 *.mp3
 *.ogg
+*.mp4
 
 # ---------- Secrets ----------
 .env
@@ -86,7 +86,15 @@ frontend/uploads/
 *.db
 backend/agromate.db
 
-# ---------- Backup files ----------
+# ---------- Backup, Scratch & Root Dumps ----------
 *.backup
 *.final_ov7670_qvga
 firmware/backup/
+/scratch/
+/scratch_*
+/gc2145.c.obj
+/gc2145_disasm.txt
+/gc2145_dump.txt
+/gc2145_official.c
+/gc2145_regs.h
+/gc2145_settings.h

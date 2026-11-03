@@ -2,7 +2,7 @@
  * AgroMate Display Manager Implementation
  * 
  * Drives the RM68140 3.5" 320x480 TFT via 8-bit parallel interface.
- * Uses TFT_eSPI with write-only mode (TFT_RD = -1).
+ * Uses TFT_eSPI with RD on GPIO 20 (driven HIGH for write-only operation).
  * 
  * White Screen Fix Notes:
  *   1. Added 1-second pre-init delay for hardware stabilization
@@ -20,7 +20,6 @@ void DisplayManager::begin() {
 
     // ── Perform Hardware Reset ──
     if (TFT_RST_PIN >= 0) {
-        Serial.println("[TFT] Performing hardware reset...");
         pinMode(TFT_RST_PIN, OUTPUT);
         digitalWrite(TFT_RST_PIN, HIGH);
         delay(50);
@@ -30,32 +29,20 @@ void DisplayManager::begin() {
         delay(150);
     }
 
-    Serial.println("[TFT] Starting RM68140 init...");
-
     _tft.init();
-    _tft.setRotation(1);  // Landscape mode: 480 wide x 320 tall
+    _tft.setRotation(SCREEN_ROTATION);  // Portrait mode: 320 wide x 480 tall
 
-    // ── Diagnostic: Read display ID to verify communication ──
-    // If this returns 0x000000, the data bus wiring is wrong.
-    uint32_t displayId = _tft.readcommand8(0x04);  // Read Display ID
-    Serial.printf("[TFT] Display ID: 0x%02X\n", displayId);
-
-    // ── Try both inversion states to find the correct one ──
     // Some RM68140 panels need inversion ON, others OFF.
     _tft.invertDisplay(false);
 
     _tft.fillScreen(TFT_BLACK);
     _tft.setTextColor(TFT_WHITE, TFT_BLACK);
 
-    // Sprite rendering disabled to save DRAM for camera feed
-
     // Set backlight if controlled by GPIO
     if (TFT_BL_PIN >= 0) {
         pinMode(TFT_BL_PIN, OUTPUT);
         analogWrite(TFT_BL_PIN, 200);
     }
-
-    Serial.println("[TFT] RM68140 init complete.");
 }
 
 void DisplayManager::clear(uint16_t color) {

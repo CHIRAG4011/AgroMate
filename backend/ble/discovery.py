@@ -198,8 +198,19 @@ class RobotDiscovery:
 
     async def _scan_loop(self):
         """Background scanning loop."""
+        import sys
+        from .connection import ConnectionState
         while self._scanning:
             try:
+                if sys.platform == "win32":
+                    has_active = any(
+                        r.state == ConnectionState.ACTIVE
+                        for r in self.connection_manager._robots.values()
+                    )
+                    if has_active:
+                        await asyncio.sleep(self.scan_interval)
+                        continue
+
                 await self.scan_once()
                 await asyncio.sleep(self.scan_interval)
             except asyncio.CancelledError:

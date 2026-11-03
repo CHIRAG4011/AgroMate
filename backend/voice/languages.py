@@ -996,3 +996,314 @@ def get_all_translations(language: str) -> dict:
     for key, translations in TRANSLATIONS.items():
         result[key] = translations.get(language, translations.get("en", key))
     return result
+
+
+# ──────────────────────────────────────────────────────────────
+# Global System Language State & Scan Localization
+# ──────────────────────────────────────────────────────────────
+
+_CURRENT_SYSTEM_LANGUAGE = "hi"
+
+
+def get_system_language() -> str:
+    """Get the currently active system-wide language."""
+    return _CURRENT_SYSTEM_LANGUAGE
+
+
+def set_system_language(lang: str) -> str:
+    """Set the system-wide language across all backend components."""
+    global _CURRENT_SYSTEM_LANGUAGE
+    clean_lang = (lang or "en").lower().strip()
+    if clean_lang in SUPPORTED_LANGUAGES or clean_lang == "en":
+        _CURRENT_SYSTEM_LANGUAGE = clean_lang
+    return _CURRENT_SYSTEM_LANGUAGE
+
+
+# Multilingual dictionaries for common crops
+PLANT_NAMES_MULTILINGUAL = {
+    "tomato": {
+        "en": "Tomato", "hi": "टमाटर", "gu": "ટામેટાં", "mr": "टोमॅटो",
+        "ta": "தக்காளி", "te": "టమోటా", "kn": "ಟೊಮೆಟೊ", "bn": "টমেটো",
+        "pa": "ਟਮਾਟਰ", "ur": "ٹماٹر", "ml": "തക്കാളി",
+        "roman_hi": "Tamatar (Tomato)", "roman_gu": "Tameta (Tomato)", "roman_mr": "Tomato",
+    },
+    "potato": {
+        "en": "Potato", "hi": "आलू", "gu": "બટાટા", "mr": "बटाटा",
+        "ta": "உருளைக்கிழங்கு", "te": "బంగాళాదుంప", "kn": "ಆಲೂಗಡ್ಡೆ", "bn": "আলু",
+        "pa": "ਆਲੂ", "ur": "آلو", "ml": "ഉരുളക്കിഴങ്ങ്",
+        "roman_hi": "Aalu (Potato)", "roman_gu": "Batata (Potato)", "roman_mr": "Batata",
+    },
+    "rose": {
+        "en": "Rose", "hi": "गुलाब", "gu": "ગુલાબ", "mr": "गुलाब",
+        "ta": "ரோஜா", "te": "గులాబీ", "kn": "ಗುಲಾಬಿ", "bn": "গোলাপ",
+        "pa": "ਗੁਲਾਬ", "ur": "گلاب", "ml": "റോസ്",
+        "roman_hi": "Gulaab (Rose)", "roman_gu": "Gulaab (Rose)", "roman_mr": "Gulaab",
+    },
+    "cotton": {
+        "en": "Cotton", "hi": "कपास", "gu": "કપાસ", "mr": "कापूस",
+        "ta": "பருத்தி", "te": "పత్తి", "kn": "ಹತ್ತಿ", "bn": "তুলা",
+        "pa": "ਕਪਾਹ", "ur": "کپاس", "ml": "പരുത്തി",
+        "roman_hi": "Kapaas (Cotton)", "roman_gu": "Kapaas (Cotton)", "roman_mr": "Kapoos",
+    },
+    "wheat": {
+        "en": "Wheat", "hi": "गेहूं", "gu": "ઘઉં", "mr": "गहू",
+        "ta": "கோதுமை", "te": "గోధుమ", "kn": "ಗೋಧಿ", "bn": "গম",
+        "pa": "ਕਣਕ", "ur": "گندم", "ml": "ഗോതമ്പ്",
+        "roman_hi": "Gehun (Wheat)", "roman_gu": "Ghau (Wheat)", "roman_mr": "Gahu",
+    },
+    "rice": {
+        "en": "Rice", "hi": "चावल / धान", "gu": "ડાંગર / ચોખા", "mr": "भात / तांदूळ",
+        "ta": "நெல் / அரிசி", "te": "వరి", "kn": "ಭತ್ತ", "bn": "ধান / চাল",
+        "pa": "ਝੋਨਾ / ਚੌਲ", "ur": "دھان / چاول", "ml": "നെല്ല്",
+        "roman_hi": "Chawal / Dhaan", "roman_gu": "Chokha / Dangar", "roman_mr": "Bhaat",
+    },
+    "chili": {
+        "en": "Chili", "hi": "मिर्च", "gu": "મરચાં", "mr": "मिरची",
+        "ta": "மிளகாய்", "te": "మిరపకాయ", "kn": "ಮೆಣಸಿನಕಾಯಿ", "bn": "লঙ্কা",
+        "pa": "ਮਿਰਚ", "ur": "مرچ", "ml": "മുളക്",
+        "roman_hi": "Mirch (Chili)", "roman_gu": "Marcha (Chili)", "roman_mr": "Mirchi",
+    },
+    "pepper": {
+        "en": "Bell Pepper", "hi": "शिमला मिर्च", "gu": "કેપ્સિકમ / સિમલા મરચાં", "mr": "ढोबळी मिरची",
+        "ta": "குடைமிளகாய்", "te": "క్యాప్సికమ్", "kn": "ದಪ್ಪಮೆಣಸಿನಕಾಯಿ", "bn": "ক্যাপসিকাম",
+        "pa": "ਸ਼ਿਮਲਾ ਮਿਰਚ", "ur": "شملہ مرچ", "ml": "ക്യാപ്സിക്കം",
+        "roman_hi": "Shimla Mirch", "roman_gu": "Capsicum", "roman_mr": "Dhobli Mirchi",
+    },
+    "onion": {
+        "en": "Onion", "hi": "प्याज", "gu": "ડુંગળી", "mr": "कांदा",
+        "ta": "வெங்காயம்", "te": "ఉల్లిపాయ", "kn": "ಈರುಳ್ಳಿ", "bn": "পেঁয়াজ",
+        "pa": "ਗੰਢਾ", "ur": "پیاز", "ml": "സവാള",
+        "roman_hi": "Pyaaz (Onion)", "roman_gu": "Dungli (Onion)", "roman_mr": "Kanda",
+    },
+    "mango": {
+        "en": "Mango", "hi": "आम", "gu": "કેરી", "mr": "आंबा",
+        "ta": "மாம்பழம்", "te": "మామిడి", "kn": "ಮಾವಿನಕಾಯಿ", "bn": "আম",
+        "pa": "ਅੰਬ", "ur": "آم", "ml": "മാമ്പഴം",
+        "roman_hi": "Aam (Mango)", "roman_gu": "Keri (Mango)", "roman_mr": "Aamba",
+    },
+    "banana": {
+        "en": "Banana", "hi": "केला", "gu": "કેળાં", "mr": "કેळी",
+        "ta": "வாழை", "te": "అరటి", "kn": "ಬಾಳೆ", "bn": "কলা",
+        "pa": "ਕੇਲਾ", "ur": "کیلا", "ml": "വാഴപ്പഴം",
+        "roman_hi": "Kela (Banana)", "roman_gu": "Kela (Banana)", "roman_mr": "Keli",
+    },
+    "money plant": {
+        "en": "Money Plant", "hi": "मनी प्लांट", "gu": "મની પ્લાન્ટ", "mr": "मनी प्लांट",
+        "ta": "மணி பிளான்ட்", "te": "మనీ ప్లాంట్", "kn": "ಮನಿ ಪ್ಲಾಂಟ್", "bn": "মানি প্ল্যান্ট",
+        "pa": "ਮਨੀ ਪਲਾਂਟ", "ur": "منی پلانٹ", "ml": "മണി പ്ലാന്റ്",
+        "roman_hi": "Money Plant", "roman_gu": "Money Plant", "roman_mr": "Money Plant",
+    },
+    "tulsi": {
+        "en": "Tulsi (Holy Basil)", "hi": "तुलसी", "gu": "તુલસી", "mr": "तुळस",
+        "ta": "துளசி", "te": "తులసి", "kn": "ತುಳಸಿ", "bn": "তুলসী",
+        "pa": "ਤੁਲਸੀ", "ur": "تُلسی", "ml": "തുളസി",
+        "roman_hi": "Tulsi (Holy Basil)", "roman_gu": "Tulsi", "roman_mr": "Tulas",
+    },
+    "neem": {
+        "en": "Neem", "hi": "नीम", "gu": "લીમડો", "mr": "कडूनेम",
+        "ta": "வேம்பு", "te": "వేప", "kn": "ಬೇವು", "bn": "নিম",
+        "pa": "ਨਿੰਮ", "ur": "نیم", "ml": "വേപ്പ്",
+        "roman_hi": "Neem", "roman_gu": "Limdo", "roman_mr": "Kadunimb",
+    },
+}
+
+# Multilingual dictionaries for common plant diseases
+DISEASE_NAMES_MULTILINGUAL = {
+    "healthy": {
+        "en": "Healthy Plant", "hi": "पौधा स्वस्थ है", "gu": "છોડ સ્વસ્થ છે", "mr": "रोप निरोगी आहे",
+        "ta": "செடி ஆரோக்கியமாக உள்ளது", "te": "మొక్క ఆరోగ్యంగా ఉంది", "kn": "ಸಸ್ಯ ಆರೋಗ್ಯಕರವಾಗಿದೆ",
+        "bn": "গাছ সম্পূর্ণ সুস্থ", "pa": "ਬੂਟਾ ਬਿਲਕੁਲ ਤੰਦਰੁਸਤ ਹੈ", "ur": "پودا صحت مند ہے",
+        "roman_hi": "SWASTH PAUDHA", "roman_gu": "SWASTH CHHOD", "roman_mr": "NIROGI ROP",
+    },
+    "early blight": {
+        "en": "Early Blight", "hi": "अगेती झुलसा रोग", "gu": "આગોતરો સુકારો", "mr": "लवकर येणारा करपा",
+        "ta": "ஆரம்ப கருகல் நோய்", "te": "ముందస్తు తెగులు", "kn": "ಆರಂಭಿಕ ರೋಗ",
+        "bn": "আগে আসা ধসা রোগ", "pa": "ਅਗੇਤੀ ਝੁਲਸਾ ਰੋਗ", "ur": "اگیتی جھلساؤ",
+        "roman_hi": "Ageti Jhulsa (Early Blight)", "roman_gu": "Aagotaro Sukaro", "roman_mr": "Karpa Rog",
+    },
+    "late blight": {
+        "en": "Late Blight", "hi": "पछेती झुलसा रोग", "gu": "પાછોતરો સુકારો", "mr": "उशिरा येणारा करपा",
+        "ta": "பிற்கால கருகல் நோய்", "te": "ఆలస్యపు తెగులు", "kn": "ತಡವಾದ ರೋಗ",
+        "bn": "দেরিতে আসা ধসা রোগ", "pa": "ਪਛੇਤੀ ਝੁਲਸਾ ਰੋਗ", "ur": "پچھیتی جھلساؤ",
+        "roman_hi": "Pacheti Jhulsa (Late Blight)", "roman_gu": "Pachhotaro Sukaro", "roman_mr": "Karpa Rog",
+    },
+    "leaf spot": {
+        "en": "Leaf Spot Disease", "hi": "पत्ती धब्बा रोग", "gu": "પાનના ટપકા નો રોગ", "mr": "पानावरील ठिपके",
+        "ta": "இலைப்புள்ளி நோய்", "te": "ఆకు మచ్చ తెగులు", "kn": "ಎಲೆ ಚುಕ್ಕೆ ರೋಗ",
+        "bn": "পাতার দাগ রোগ", "pa": "ਪੱਤਿਆਂ ਦੇ ਧੱਬੇ", "ur": "پتوں پر دھبے",
+        "roman_hi": "Patti Dhabba (Leaf Spot)", "roman_gu": "Panna Tapka", "roman_mr": "Panavaril Thipke",
+    },
+    "powdery mildew": {
+        "en": "Powdery Mildew", "hi": "चूर्णिल आसिता (सफेद फफूंद)", "gu": "ભૂકી છારો", "mr": "भुरी रोग",
+        "ta": "சாம்பல் நோய்", "te": "బూడిద తెగులు", "kn": "ಬೂದಿ ರೋಗ",
+        "bn": "পাউডারি মিলডিউ", "pa": "ਚੂਰਨਿਲ ਉੱਲੀ", "ur": "سفید پھپھوندی",
+        "roman_hi": "Safed Phaphoond (Powdery Mildew)", "roman_gu": "Bhuki Chharo", "roman_mr": "Bhuri Rog",
+    },
+    "bacterial blight": {
+        "en": "Bacterial Blight", "hi": "जीवाणु झुलसा", "gu": "જીવાણુ સુકારો", "mr": "जिवाणू करपा",
+        "ta": "பாக்டீரியா கருகல்", "te": "బాక్టీరియల్ తెగులు", "kn": "ಬ್ಯಾಕ್ಟೀರಿಯಲ್ ರೋಗ",
+        "bn": "ব্যাকটেরিয়া ব্লাইট", "pa": "ਜੀਵਾਣੂ ਝੁਲਸਾ", "ur": "بیکٹیریل جھلساؤ",
+        "roman_hi": "Jivanu Jhulsa", "roman_gu": "Jivanu Sukaro", "roman_mr": "Jivanu Karpa",
+    },
+    "rust": {
+        "en": "Rust Disease", "hi": "गेरुआ / रतुआ रोग", "gu": "ગેરુ રોગ", "mr": "तांबेरा रोग",
+        "ta": "துரு நோய்", "te": "తుప్పు తెగులు", "kn": "ತುಕ್ಕು ರೋಗ",
+        "bn": "মরিচা রোগ", "pa": "ਕੁੰਗੀ ਰੋਗ", "ur": "رتوا روگ",
+        "roman_hi": "Ratua Rog (Rust)", "roman_gu": "Geru Rog", "roman_mr": "Tambera Rog",
+    },
+    "mosaic virus": {
+        "en": "Mosaic Virus", "hi": "मोज़ेक वायरस रोग", "gu": "મોઝેક વાયરસ", "mr": "मोझॅक व्हायरस",
+        "ta": "மொசைக் வைரஸ்", "te": "మొజాయిక్ వైరస్", "kn": "ಮೊಸಾಯಿಕ್ ವೈರಸ್",
+        "bn": "মোজাইক ভাইরাস", "pa": "ਮੋਜ਼ੇਕ ਵਾਇਰਸ", "ur": "موزیک وائرس",
+        "roman_hi": "Mosaic Virus", "roman_gu": "Mosaic Virus", "roman_mr": "Mosaic Virus",
+    },
+}
+
+
+def localize_plant_name(name: str, language: str = "en") -> str:
+    """Translate crop plant name into target language (Devanagari / Indian scripts)."""
+    if not name:
+        return "Plant"
+    clean = name.lower().strip()
+    for key, trans in PLANT_NAMES_MULTILINGUAL.items():
+        if key in clean or clean in key:
+            return trans.get(language, trans.get("en", name))
+    return name
+
+
+def localize_disease_name(disease: str, language: str = "en") -> str:
+    """Translate disease name into target language."""
+    if not disease or disease.lower() in ("healthy", "none", "n/a", "no disease"):
+        return DISEASE_NAMES_MULTILINGUAL["healthy"].get(language, "Healthy")
+    clean = disease.lower().strip()
+    for key, trans in DISEASE_NAMES_MULTILINGUAL.items():
+        if key in clean or clean in key:
+            return trans.get(language, trans.get("en", disease))
+    return disease
+
+
+def get_localized_scan_speech(
+    plant_name: str,
+    disease_name: str,
+    is_healthy: bool,
+    is_low_conf: bool,
+    conf_pct: int,
+    language: str = "en",
+) -> str:
+    """
+    Generate natural spoken speech text in the native script of the selected language.
+    Used by Edge-TTS / Gemini TTS for the robot speaker and Bluetooth audio.
+    """
+    lang = (language or "en").lower().strip()
+    local_plant = localize_plant_name(plant_name, lang)
+    local_disease = localize_disease_name(disease_name, lang)
+
+    if is_low_conf:
+        templates = {
+            "hi": "तस्वीर स्पष्ट नहीं है। कृपया 10 से 15 सेंटीमीटर की दूरी से पुनः फोटो लें।",
+            "gu": "ફોટો સ્પષ્ટ નથી. કૃપા કરીને 10 થી 15 સેમી અંતરેથી ફરી ફોટો લો.",
+            "mr": "छायाचित्र स्पष्ट नाही. कृपया 10 ते 15 सेमी अंतरावरून पुन्हा फोटो घ्या.",
+            "pa": "ਤਸਵੀਰ ਸਾਫ਼ ਨਹੀਂ ਹੈ। ਕਿਰਪਾ ਕਰਕੇ 10 ਤੋਂ 15 ਸੈਂਟੀਮੀਟਰ ਦੀ ਦੂਰੀ ਤੋਂ ਦੁਬਾਰਾ ਫੋਟੋ ਲਓ।",
+            "bn": "ছবি পরিষ্কার নয়। দয়া করে 10 থেকে 15 সেন্টিমিটার দূর থেকে আবার ছবি তুলুন।",
+            "ta": "படம் தெளிவாக இல்லை. தயவுசெய்து 10 முதல் 15 செமீ தூரத்திலிருந்து மீண்டும் படம் எடுக்கவும்.",
+            "te": "చిత్రం స్పష్టంగా లేదు. దయచేసి 10 నుండి 15 సెం.మీ దూరం నుండి మళ్లీ ఫోటో తీయండి.",
+            "kn": "ಚಿತ್ರ ಸ್ಪಷ್ಟವಾಗಿಲ್ಲ. ದಯವಿಟ್ಟು 10 ರಿಂದ 15 ಸೆಂ.ಮೀ ದೂರದಿಂದ ಮತ್ತೊಮ್ಮೆ ಫೋಟೋ ತೆಗೆಯಿರಿ.",
+            "ml": "ചിത്രം വ്യക്തമല്ല. ദയവായി 10 മുതൽ 15 സെന്റീമീറ്റർ അകലെ നിന്ന് വീണ്ടും ഫോട്ടോ എടുക്കുക.",
+            "ur": "تصویر واضح نہیں ہے۔ براہ کرم 10 سے 15 سینٹی میٹر کے فاصلے سے دوبارہ تصویر لیں۔",
+        }
+        return templates.get(lang, "Image unclear. Confidence is low. Please retake photo from 10 to 15 centimeters away.")
+
+    if is_healthy:
+        templates = {
+            "hi": f"स्कैन पूरा हुआ। {local_plant}। पौधा स्वस्थ है। कोई रोग नहीं मिला।",
+            "gu": f"સ્કેન પૂર્ણ થયું. {local_plant}. છોડ એકદમ સ્વસ્થ છે.",
+            "mr": f"स्कॅन पूर्ण झाले. {local_plant}. रोप पूर्णपणे निरोगी आहे.",
+            "pa": f"ਸਕੈਨ ਪੂਰਾ ਹੋ ਗਿਆ। {local_plant}। ਬੂਟਾ ਬਿਲਕੁਲ ਤੰਦਰੁਸਤ ਹੈ।",
+            "bn": f"স্ক্যান সম্পন্ন হয়েছে। {local_plant}। গাছটি সম্পূর্ণ সুস্থ আছে।",
+            "ta": f"ஸ்கேன் முடிந்தது. {local_plant}. செடி ஆரோக்கியமாக உள்ளது.",
+            "te": f"స్కాన్ పూర్తయింది. {local_plant}. మొక్క ఆరోగ్యంగా ఉంది.",
+            "kn": f"ಸ್ಕ್ಯಾನ್ ಪೂರ್ಣಗೊಂಡಿದೆ. {local_plant}. ಸಸ್ಯವು ಆರೋಗ್ಯಕರವಾಗಿದೆ.",
+            "ml": f"സ്കാൻ പൂർത്തിയായി. {local_plant}. ചെടി പൂർണ്ണമായും ആരോഗ്യകരമാണ്.",
+            "ur": f"اسکین مکمل ہو گیا۔ {local_plant}۔ پودا بالکل تندرست ہے۔",
+        }
+        return templates.get(lang, f"Scan complete. {plant_name}. Plant is healthy and disease free.")
+    else:
+        templates = {
+            "hi": f"स्कैन पूरा हुआ। {local_plant}। {local_disease} का पता चला है। कृपया उपचार करें।",
+            "gu": f"સ્કેન પૂર્ણ થયું. {local_plant}. {local_disease} જણાયો છે. કૃપા કરીને સારવાર કરો.",
+            "mr": f"स्कॅन पूर्ण झाले. {local_plant}. {local_disease} आढळला आहे. तात्काळ उपचार आवश्यक आहेत.",
+            "pa": f"ਸਕੈਨ ਪੂਰਾ ਹੋ ਗਿਆ। {local_plant}। {local_disease} ਪਾਇਆ ਗਿਆ ਹੈ।",
+            "bn": f"স্ক্যান সম্পন্ন হয়েছে। {local_plant}। {local_disease} ধরা পড়েছে।",
+            "ta": f"ஸ்கேன் முடிந்தது. {local_plant}. {local_disease} நோய் கண்டறியப்பட்டது.",
+            "te": f"స్కాన్ పూర్తయింది. {local_plant}. {local_disease} తెగులు గుర్తించబడింది.",
+            "kn": f"ಸ್ಕ್ಯಾನ್ ಪೂರ್ಣಗೊಂಡಿದೆ. {local_plant}. {local_disease} ರೋಗ ಪತ್ತೆಯಾಗಿದೆ.",
+            "ml": f"സ്കാൻ പൂർത്തിയായി. {local_plant}. {local_disease} കണ്ടെത്തി.",
+            "ur": f"اسکین مکمل ہو گیا۔ {local_plant}۔ {local_disease} کی تشخیص ہوئی ہے۔",
+        }
+        return templates.get(lang, f"Scan complete. {plant_name}. Detected {disease_name}. Treatment recommended.")
+
+
+def get_localized_tft_data(
+    plant_name: str,
+    disease_name: str,
+    is_healthy: bool,
+    severity: str,
+    tips: str,
+    language: str = "en",
+) -> dict:
+    """
+    Format strings for the RM68140 TFT display.
+    Because standard TFT_eSPI fonts are 8-bit ASCII, provides readable Romanized/Hinglish
+    terms for Indian languages so display text never renders corrupted characters.
+    """
+    lang = (language or "en").lower().strip()
+    clean_plant = (plant_name or "Plant").lower().strip()
+    clean_disease = (disease_name or "Healthy").lower().strip()
+
+    # Look up Romanized version
+    roman_plant = plant_name
+    for key, trans in PLANT_NAMES_MULTILINGUAL.items():
+        if key in clean_plant or clean_plant in key:
+            roman_plant = trans.get(f"roman_{lang}", trans.get("roman_hi", plant_name))
+            break
+
+    if is_healthy:
+        status_text = "SWASTH PAUDHA" if lang == "hi" else ("SWASTH CHHOD" if lang == "gu" else "PLANT IS HEALTHY")
+        roman_disease = "Healthy"
+        roman_tips = tips
+        if lang == "hi":
+            roman_tips = "Niyamit paani dein;Dhup dikhayein;Khad dalein;Mitti jaanchein"
+        elif lang == "gu":
+            roman_tips = "Niyamit pani aapo;Suryaprakash aapo;Khad aapo"
+    else:
+        status_text = "ROGI PAUDHA" if lang == "hi" else ("ROG GRASHT" if lang == "gu" else "DISEASE DETECTED")
+        roman_disease = disease_name
+        for key, trans in DISEASE_NAMES_MULTILINGUAL.items():
+            if key in clean_disease or clean_disease in key:
+                roman_disease = trans.get(f"roman_{lang}", trans.get("roman_hi", disease_name))
+                break
+
+        roman_tips = tips
+        if lang == "hi":
+            if "blight" in clean_disease or "spot" in clean_disease:
+                roman_tips = "Neem tel spray karein;Kharab patte hatayein;Fungicide dalein"
+            elif "mildew" in clean_disease:
+                roman_tips = "Halka pani dein;Suryaprakash dein;Sulphur spray karein"
+            else:
+                roman_tips = "Neem spray karein;Khad santulit karein;Niyamit dekhbhal"
+
+    # Severity in Romanized format
+    sev_map = {
+        "hi": {"none": "KOI NAHI", "mild": "HALKA", "moderate": "MADHYAM", "severe": "GAMBHIR", "high": "UCHH"},
+        "gu": {"none": "KAI NATHI", "mild": "HALKO", "moderate": "MADHYAM", "severe": "GAMBHIR", "high": "UCHH"},
+    }
+    roman_sev = sev_map.get(lang, {}).get((severity or "").lower(), severity.upper() if severity else "MODERATE")
+
+    return {
+        "plant": roman_plant,
+        "disease": roman_disease,
+        "status": status_text,
+        "severity": roman_sev,
+        "tips": roman_tips,
+        "language_badge": lang.upper(),
+    }

@@ -365,8 +365,10 @@ async function autoTriggerScan() {
         }
       });
 
-      // Auto TTS the short summary (respect autoplay toggle)
-      const textToSpeak = scanResult.ai_summary || generateShortTtsSummary(scanResult);
+      // Auto TTS the short summary in the user's selected language
+      const textToSpeak = (currentLanguage && currentLanguage !== 'en') 
+        ? generateShortTtsSummary(scanResult) 
+        : (scanResult.ai_summary || generateShortTtsSummary(scanResult));
       if (localStorage.getItem('agromate-voice-autoplay') !== 'false') {
         ttsPlayer.play(textToSpeak, currentLanguage);
       }
@@ -393,9 +395,92 @@ function generateShortTtsSummary(res) {
   if (!res) return 'The scan was completed but no results were returned. Please try again.';
   
   const isHealthy = checkIsHealthy(res);
-  const plant = res.plant_name || 'Unknown Plant';
+  const plant = res.plant_name || 'Plant';
   const sci = res.scientific_name || '';
   const confidence = Math.round((parseFloat(res.confidence) || 0.9) * 100);
+  const issue = res.disease_name || res.pest_name || res.primary_deficiency || 'Issue';
+  const lang = (typeof currentLanguage !== 'undefined' ? currentLanguage : 'en') || 'en';
+
+  if (lang === 'hi') {
+    if (isHealthy) {
+      return `स्कैन पूरा हुआ। ${plant}। पौधा पूरी तरह से स्वस्थ है। कोई बीमारी नहीं मिली है।`;
+    } else {
+      let hiText = `स्कैन पूरा हुआ। ${plant}। ${issue} का पता चला है।`;
+      if (res.organic_treatment || res.treatment) {
+        const firstTip = (res.organic_treatment || res.treatment).split(';')[0];
+        hiText += ` उपचार सलाह: ${firstTip}।`;
+      }
+      return hiText;
+    }
+  }
+
+  if (lang === 'gu') {
+    if (isHealthy) {
+      return `સ્કેન પૂર્ણ થયું. ${plant}. છોડ એકદમ સ્વસ્થ છે. કોઈ રોગ મળ્યો નથી.`;
+    } else {
+      let guText = `સ્કેન પૂર્ણ થયું. ${plant}. ${issue} રોગ જણાયો છે.`;
+      if (res.organic_treatment || res.treatment) {
+        const firstTip = (res.organic_treatment || res.treatment).split(';')[0];
+        guText += ` સારવાર સલાહ: ${firstTip}.`;
+      }
+      return guText;
+    }
+  }
+
+  if (lang === 'mr') {
+    if (isHealthy) {
+      return `स्कॅन पूर्ण झाले. ${plant}. रोप पूर्णपणे निरोगी आहे. कोणताही रोग आढळला नाही.`;
+    } else {
+      let mrText = `स्कॅन पूर्ण झाले. ${plant}. ${issue} रोग आढळला आहे.`;
+      if (res.organic_treatment || res.treatment) {
+        const firstTip = (res.organic_treatment || res.treatment).split(';')[0];
+        mrText += ` उपचार सल्ला: ${firstTip}.`;
+      }
+      return mrText;
+    }
+  }
+
+  if (lang === 'pa') {
+    return isHealthy
+      ? `ਸਕੈਨ ਪੂਰਾ ਹੋ ਗਿਆ। ${plant}। ਬੂਟਾ ਬਿਲਕੁਲ ਤੰਦਰੁਸਤ ਹੈ।`
+      : `ਸਕੈਨ ਪੂਰਾ ਹੋ ਗਿਆ। ${plant}। ${issue} ਰੋਗ ਪਾਇਆ ਗਿਆ ਹੈ।`;
+  }
+
+  if (lang === 'bn') {
+    return isHealthy
+      ? `স্ক্যান সম্পন্ন হয়েছে। ${plant}। গাছটি সম্পূর্ণ সুস্থ আছে।`
+      : `স্ক্যান সম্পন্ন হয়েছে। ${plant}। ${issue} ধরা পড়েছে।`;
+  }
+
+  if (lang === 'ta') {
+    return isHealthy
+      ? `ஸ்கேன் முடிந்தது. ${plant}. செடி ஆரோக்கியமாக உள்ளது.`
+      : `ஸ்கேன் முடிந்தது. ${plant}. ${issue} நோய் கண்டறியப்பட்டது.`;
+  }
+
+  if (lang === 'te') {
+    return isHealthy
+      ? `స్కాన్ పూర్తయింది. ${plant}. మొక్క ఆరోగ్యంగా ఉంది.`
+      : `స్కాన్ పూర్తయింది. ${plant}. ${issue} తెగులు గుర్తించబడింది.`;
+  }
+
+  if (lang === 'kn') {
+    return isHealthy
+      ? `ಸ್ಕ್ಯಾನ್ ಪೂರ್ಣಗೊಂಡಿದೆ. ${plant}. ಸಸ್ಯವು ಆರೋಗ್ಯಕರವಾಗಿದೆ.`
+      : `ಸ್ಕ್ಯಾನ್ ಪೂರ್ಣಗೊಂಡಿದೆ. ${plant}. ${issue} ರೋಗ ಪತ್ತೆಯಾಗಿದೆ.`;
+  }
+
+  if (lang === 'ml') {
+    return isHealthy
+      ? `സ്കാൻ പൂർത്തിയായി. ${plant}. ചെടി പൂർണ്ണമായും ആരോഗ്യകരമാണ്.`
+      : `സ്കാൻ പൂർത്തിയായി. ${plant}. ${issue} കണ്ടെത്തി.`;
+  }
+
+  if (lang === 'ur') {
+    return isHealthy
+      ? `اسکین مکمل ہو گیا۔ ${plant}۔ پودا بالکل تندرست ہے۔`
+      : `اسکین مکمل ہو گیا۔ ${plant}۔ ${issue} کی تشخیص ہوئی ہے۔`;
+  }
   
   let summary = `The scan was completed successfully. `;
   summary += `The scanned plant is ${plant}`;
@@ -409,7 +494,6 @@ function generateShortTtsSummary(res) {
   if (isHealthy) {
     summary += `We have not detected any disease or pest issues. Your plant looks healthy and in good condition. `;
   } else {
-    const issue = res.disease_name || res.pest_name || res.primary_deficiency || 'an issue';
     const severity = res.severity || 'moderate';
     summary += `We have detected ${issue} with ${severity} severity. `;
     

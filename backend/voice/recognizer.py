@@ -225,16 +225,33 @@ class VoiceRecognizer:
                 }]
             }
 
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={self.settings.gemini_api_key}"
+            candidate_models = [
+                "gemini-flash-lite-latest",
+                "gemini-3.1-flash-lite",
+                "gemini-3.5-flash-lite",
+                "gemini-3.5-flash",
+                "gemini-2.5-flash",
+            ]
 
             async with httpx.AsyncClient(timeout=15.0) as client:
-                response = await client.post(
-                    url,
-                    headers={"Content-Type": "application/json"},
-                    json=payload
-                )
+                response = None
+                for model in candidate_models:
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={self.settings.gemini_api_key}"
+                    try:
+                        res = await client.post(
+                            url,
+                            headers={"Content-Type": "application/json"},
+                            json=payload
+                        )
+                        if res.status_code == 200:
+                            response = res
+                            break
+                        elif res.status_code in (429, 503):
+                            logger.warning(f"Gemini voice model {model} rate-limited ({res.status_code}), trying next")
+                    except Exception as me:
+                        logger.warning(f"Gemini voice model {model} request failed: {me}")
 
-                if response.status_code == 200:
+                if response and response.status_code == 200:
                     data = response.json()
                     candidates = data.get("candidates", [])
                     if candidates:

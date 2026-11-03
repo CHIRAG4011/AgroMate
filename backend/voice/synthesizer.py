@@ -142,7 +142,7 @@ class VoiceSynthesizer:
         language: str = "en",
         voice: str = None,
         gender: str = "female",
-        rate: str = "+0%",
+        rate: str = None,
         pitch: str = "+0Hz",
         compress_for_robot: bool = False,
         engine: str = "gemini",
@@ -166,6 +166,10 @@ class VoiceSynthesizer:
         if not text.strip():
             return None
 
+        # Fast and clear default speech rate (+22% is energetic, clear, and avoids sluggish pauses)
+        if rate is None:
+            rate = getattr(self.settings, "tts_rate", "+22%") or "+22%"
+
         # Auto language detection
         if language == "auto" or not language or language == "en":
             # If default is English, check if the actual text contains local scripts
@@ -176,20 +180,17 @@ class VoiceSynthesizer:
         
         result = None
 
-        # Priority 1: ElevenLabs engine (if explicitly requested or if ElevenLabs API key is present)
-        if (engine == "elevenlabs" or (engine == "auto" and self.settings.elevenlabs_api_key)) and self.settings.elevenlabs_api_key:
-            el_voice = voice or self.settings.elevenlabs_voice_id or ("EXAVITQu4vr4xnSDxMaL" if gender == "female" else "pNInz6obpgHs517G4SMt")
+        # Check if ElevenLabs engine is requested and available
+        if engine == "elevenlabs" and self.settings.elevenlabs_api_key:
+            el_voice = voice
+            if not el_voice:
+                el_voice = self.settings.elevenlabs_voice_id or ("weA4Q36twV5kwSaTEL0Q" if gender == "female" else "pNInz6obpgHs517G4SMt")
             result = await self._synthesize_elevenlabs(text, el_voice, language)
 
-        # Priority 2: Gemini engine
-        if not result and (engine == "gemini" or self.settings.gemini_api_key) and self.settings.gemini_api_key:
+        # Check if Gemini engine is requested and available (or fallback from ElevenLabs)
+        if not result and (engine == "elevenlabs" or engine == "gemini") and self.settings.gemini_api_key:
             voice_name = voice or ("Kore" if gender == "female" else "Puck")
             result = await self._synthesize_gemini(text, voice_name, language)
-
-        # Priority 3: ElevenLabs fallback
-        if not result and self.settings.elevenlabs_api_key:
-            el_voice = voice or self.settings.elevenlabs_voice_id or ("EXAVITQu4vr4xnSDxMaL" if gender == "female" else "pNInz6obpgHs517G4SMt")
-            result = await self._synthesize_elevenlabs(text, el_voice, language)
 
         # Try Edge-TTS
         if not result:
@@ -328,6 +329,9 @@ class VoiceSynthesizer:
                     )
                 else:
                     logger.error(f"ElevenLabs synthesis failed: {response.status_code} - {response.text}")
+                    if response.status_code == 402 and voice_id != "EXAVITQu4vr4xnSDxMaL":
+                        logger.warning("ElevenLabs library voice requires paid plan. Retrying with pre-made voice.")
+                        return await self._synthesize_elevenlabs(text, "EXAVITQu4vr4xnSDxMaL", language)
                     return None
 
         except Exception as e:
@@ -340,7 +344,8 @@ class VoiceSynthesizer:
         language: str = "en",
         voice: str = None,
         gender: str = "female",
-        engine: str = "gemini",
+        rate: str = None,
+        engine: str = "edge-tts",
     ) -> Optional[SectionedSynthesisResult]:
         """
         Synthesize a long text by splitting into logical sections.
@@ -372,6 +377,7 @@ class VoiceSynthesizer:
                 language=language,
                 voice=voice,
                 gender=gender,
+                rate=rate,
                 engine=engine,
             )
             if result:
@@ -451,11 +457,12 @@ class VoiceSynthesizer:
 
             # Clean text for TTS — remove markdown formatting
             clean_text = self._clean_for_tts(text)
+            effective_rate = rate or getattr(self.settings, "tts_rate", "+22%") or "+22%"
 
             communicate = edge_tts.Communicate(
                 text=clean_text,
                 voice=voice,
-                rate=rate,
+                rate=effective_rate,
                 pitch=pitch,
             )
 
@@ -505,7 +512,7 @@ class VoiceSynthesizer:
                     engine.setProperty("voice", v.id)
                     break
 
-            engine.setProperty("rate", 150)
+            engine.setProperty("rate", 190)
 
             # Save to buffer
             import tempfile

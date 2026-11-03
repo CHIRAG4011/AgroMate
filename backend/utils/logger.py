@@ -25,9 +25,13 @@ def setup_logging(log_level: str = "INFO", log_file: str = None):
         log_path = Path(log_file)
         log_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Configure standard logging
-    level = getattr(logging, log_level.upper(), logging.INFO)
+    # Ensure stdout/stderr handles utf-8 on Windows without crashing
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
+    level = getattr(logging, log_level.upper(), logging.INFO)
     handlers = [logging.StreamHandler(sys.stdout)]
     if log_file:
         handlers.append(logging.FileHandler(log_file, encoding="utf-8"))

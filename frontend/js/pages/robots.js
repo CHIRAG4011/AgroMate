@@ -34,7 +34,12 @@ async function loadRobots() {
   const grid = document.getElementById('robotsGrid');
   if (!grid) return;
 
-  const data = await api.get('/robots/');
+  let data = null;
+  try {
+    data = await api.get('/robots/');
+  } catch (err) {
+    console.error('[Robots] API error:', err);
+  }
 
   if (data && data.robots && data.robots.length > 0) {
     grid.innerHTML = data.robots.map((robot, i) => `
@@ -69,13 +74,22 @@ async function loadRobots() {
           </div>
         </div>
 
-        <div class="robot-actions">
-          <button class="btn btn-primary btn-sm" onclick="triggerRobotScan('${escapeHtml(robot.robot_id || robot.id)}')">
-            📷 Scan
-          </button>
-          <button class="btn btn-accent btn-sm" onclick="makeRobotSpeak('${escapeHtml(robot.robot_id || robot.id)}')">
-            🔊 Speak
-          </button>
+        <div class="robot-actions" style="display:flex;flex-wrap:wrap;gap:var(--space-xs);">
+          ${robot.connected ? `
+            <button class="btn btn-primary btn-sm" onclick="triggerRobotScan('${escapeHtml(robot.robot_id || robot.id)}')">
+              📷 Scan
+            </button>
+            <button class="btn btn-accent btn-sm" onclick="makeRobotSpeak('${escapeHtml(robot.robot_id || robot.id)}')">
+              🔊 Speak
+            </button>
+          ` : `
+            <button class="btn btn-primary btn-sm" onclick="connectRobotViaServer('${escapeHtml(robot.robot_id || robot.id)}')">
+              ⚡ Connect Server
+            </button>
+            <button class="btn btn-secondary btn-sm" onclick="scanForBots()">
+              🌐 Web Bluetooth
+            </button>
+          `}
           <button class="btn btn-ghost btn-sm" onclick="viewRobotStatus('${escapeHtml(robot.robot_id || robot.id)}')">
             📋 Details
           </button>
@@ -116,16 +130,16 @@ async function loadRobots() {
 }
 
 // AgroMate BLE Service & Characteristic UUIDs (must match firmware config.h)
-const AGROMATE_BLE_SERVICE_UUID = '12345678-1234-5678-1234-56789abcde99';
+const AGROMATE_BLE_SERVICE_UUID = '12345678-1234-5678-1234-56789abcde88';
 const AGROMATE_BLE_CHAR = {
-  CMD_TX:    '12345678-1234-5678-1234-56789abcdf91', // Laptop → ESP
-  CMD_RX:    '12345678-1234-5678-1234-56789abcdf92', // ESP → Laptop
-  IMG_TX:    '12345678-1234-5678-1234-56789abcdf93',
-  AUDIO_TX:  '12345678-1234-5678-1234-56789abcdf94',
-  AUDIO_RX:  '12345678-1234-5678-1234-56789abcdf95',
-  BATTERY:   '12345678-1234-5678-1234-56789abcdf96',
-  SENSORS:   '12345678-1234-5678-1234-56789abcdf97',
-  HEARTBEAT: '12345678-1234-5678-1234-56789abcdf98',
+  CMD_TX:    '12345678-1234-5678-1234-56789abcdf81', // Laptop → ESP
+  CMD_RX:    '12345678-1234-5678-1234-56789abcdf82', // ESP → Laptop
+  IMG_TX:    '12345678-1234-5678-1234-56789abcdf83',
+  AUDIO_TX:  '12345678-1234-5678-1234-56789abcdf84',
+  AUDIO_RX:  '12345678-1234-5678-1234-56789abcdf85',
+  BATTERY:   '12345678-1234-5678-1234-56789abcdf86',
+  SENSORS:   '12345678-1234-5678-1234-56789abcdf87',
+  HEARTBEAT: '12345678-1234-5678-1234-56789abcdf88',
 };
 
 // Track active BLE connection
@@ -157,13 +171,30 @@ async function scanForBots() {
       
       showToast(`Found device: ${device.name || device.id}`, 'success');
       
-      // Listen for disconnect events
-      device.addEventListener('gattserverdisconnected', () => {
-        showToast(`${device.name || 'Robot'} disconnected`, 'warning');
-        activeBleDevice = null;
+      // Listen for disconnect events and auto-reconnect
+      device.addEventListener('gattserverdisconnected', async () => {
+        showToast(`${device.name || 'Robot'} disconnected. Attempting auto-reconnect...`, 'warning');
         activeBleServer = null;
         activeBleService = null;
         loadRobots(); // Refresh the robot list
+
+        // Auto-reconnect up to 3 times without needing user prompt
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            await new Promise(r => setTimeout(r, 2000));
+            if (!device || !device.gatt) break;
+            console.log(`[BLE] Auto-reconnecting attempt ${attempt}/3...`);
+            const s = await device.gatt.connect();
+            activeBleDevice = device;
+            activeBleServer = s;
+            activeBleService = await s.getPrimaryService(AGROMATE_BLE_SERVICE_UUID);
+            showToast(`Reconnected to ${device.name || 'Robot'}!`, 'success');
+            loadRobots();
+            break;
+          } catch (e) {
+            console.log(`[BLE] Reconnect attempt ${attempt} failed:`, e);
+          }
+        }
       });
       
       // Connect to GATT server
@@ -204,9 +235,84 @@ async function scanForBots() {
               console.log(`[BLE] Battery: ${batteryPct}%`);
             }
           });
-          await new Promise(resolve => setTimeout(resolve, 200));
+          await new Promise(resolve => setTimeout(resolve, 100));
         } catch (e) {
           console.warn('[BLE] Could not subscribe to battery:', e);
+        }
+
+        // Subscribe to IMG_TX for high-speed direct browser image chunk reception
+        try {
+          const imgChar = await service.getCharacteristic(AGROMATE_BLE_CHAR.IMG_TX);
+          await imgChar.startNotifications();
+          
+          let imgTransfer = { chunks: {}, totalChunks: 0, totalSize: 0, transferId: 0 };
+          
+          imgChar.addEventListener('characteristicvaluechanged', async (event) => {
+            const val = new DataView(event.target.value.buffer);
+            if (val.byteLength < 10) return;
+            const sync1 = val.getUint8(0);
+            const sync2 = val.getUint8(1);
+            if (sync1 !== 0xA6 || sync2 !== 0xAD) return;
+            
+            const msgType = val.getUint16(2, true);
+            const payloadLen = val.getUint32(6, true);
+            const payload = new Uint8Array(event.target.value.buffer, 10, payloadLen);
+            
+            if (msgType === 0xFE && payload.length >= 13) {
+              // CHUNK_START
+              const pView = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+              imgTransfer.transferId = pView.getUint32(0, true);
+              imgTransfer.totalSize = pView.getUint32(4, true);
+              imgTransfer.totalChunks = pView.getUint32(8, true);
+              imgTransfer.chunks = {};
+              showToast(`Receiving scan from robot (${imgTransfer.totalSize} B)...`, 'info');
+            } else if (msgType === 0x01 && payload.length >= 6) {
+              // IMAGE_CHUNK
+              const pView = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+              const chunkIdx = pView.getUint16(4, true);
+              imgTransfer.chunks[chunkIdx] = payload.slice(6);
+            } else if (msgType === 0xFF) {
+              // CHUNK_END
+              showToast('Photo received! AI diagnosing plant disease...', 'info');
+              const sorted = Object.keys(imgTransfer.chunks).map(Number).sort((a,b) => a-b);
+              let totalBytes = 0;
+              sorted.forEach(idx => totalBytes += imgTransfer.chunks[idx].length);
+              const fullImg = new Uint8Array(totalBytes);
+              let offset = 0;
+              sorted.forEach(idx => {
+                fullImg.set(imgTransfer.chunks[idx], offset);
+                offset += imgTransfer.chunks[idx].length;
+              });
+              
+              const blob = new Blob([fullImg], { type: 'image/jpeg' });
+              const formData = new FormData();
+              formData.append('file', blob, `robot_scan_${Date.now()}.jpg`);
+              
+              try {
+                const diagRes = await fetch('/api/plants/diagnose', {
+                  method: 'POST',
+                  body: formData
+                });
+                const diagData = await diagRes.json();
+                if (diagData && diagData.status === 'success') {
+                  const d = diagData.data || {};
+                  const isHealthy = d.is_healthy;
+                  const plantName = d.plant_name || 'Plant';
+                  const disease = d.disease_name || 'Healthy';
+                  showToast(`AI Diagnosis: ${plantName} - ${isHealthy ? 'Healthy' : disease}`, isHealthy ? 'success' : 'warning');
+                } else {
+                  showToast('Scan diagnosed successfully!', 'success');
+                }
+                loadRobots();
+              } catch (diagErr) {
+                console.error('[BLE] AI diagnosis upload error:', diagErr);
+                showToast('Failed to forward image to AI server', 'error');
+              }
+            }
+          });
+          console.log('[BLE] Subscribed to IMG_TX notifications');
+        } catch (e) {
+          console.warn('[BLE] Could not subscribe to IMG_TX:', e);
         }
         
       } catch (serviceErr) {
@@ -251,6 +357,21 @@ async function scanForBots() {
   }
 }
 
+async function connectRobotViaServer(robotId) {
+  showToast(`Connecting AI server to ${robotId}...`, 'info');
+  try {
+    const res = await api.post(`/robots/${encodeURIComponent(robotId)}/connect`);
+    if (res && res.status === 'success') {
+      showToast(`AI Server connected to ${robotId}!`, 'success');
+      await refreshRobots();
+    } else {
+      showToast(`Connection failed: ${res.detail || 'Device offline or busy'}`, 'error');
+    }
+  } catch (e) {
+    showToast(`Server connection error: ${e.message}`, 'error');
+  }
+}
+
 async function triggerRobotScan(robotId) {
   // Try direct BLE if connected
   if (activeBleService) {
@@ -258,7 +379,13 @@ async function triggerRobotScan(robotId) {
       const cmdChar = await activeBleService.getCharacteristic(AGROMATE_BLE_CHAR.CMD_TX);
       // Build a CAPTURE_REQUEST message (simplified: type byte 0x16, sequence 0, length 0, CRC 0x4FF7)
       const msg = new Uint8Array([0xA6, 0xAD, 0x16, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF7, 0x4F]);
-      await cmdChar.writeValue(msg);
+      if (cmdChar.writeValueWithResponse) {
+        await cmdChar.writeValueWithResponse(msg);
+      } else if (cmdChar.writeValueWithoutResponse) {
+        await cmdChar.writeValueWithoutResponse(msg);
+      } else {
+        await cmdChar.writeValue(msg);
+      }
       showToast('Camera capture requested via BLE!', 'success');
       return;
     } catch (e) {

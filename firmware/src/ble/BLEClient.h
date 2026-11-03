@@ -23,6 +23,11 @@ public:
     void sendDebugMessage(const char* text);
     void onCommand(CommandCallback callback);
     bool isTxActive() { return _txActive; }
+    float getTxProgress() {
+        if (!_txActive || _txTotalChunks == 0) return 0.0f;
+        return (float)_txCurrentChunk / (float)_txTotalChunks;
+    }
+    void abortTx() { _abortCooperativeTx(); }
     
     // Internal handler for GATTS writes
     void handleWriteEvent(const uint8_t* data, size_t length);
@@ -40,7 +45,7 @@ private:
 
     bool _connected = false;
     CommandCallback _cmdCallback = nullptr;
-    uint16_t _mtu = 23;
+    uint16_t _mtu = 256;
     uint16_t _txSeq = 0;
 
     // Rx Reassembly state
@@ -66,7 +71,7 @@ private:
     uint32_t _txTransferId = 0;
     uint32_t _txChecksum = 0;
     unsigned long _txLastPacketTime = 0;
-    unsigned long _txPacketDelayMs = 40; // 40ms paced sending
+    unsigned long _txPacketDelayMs = 15; // 15ms paced sending to prevent BLE queue congestion
     bool _isTxDataAllocated = false;
 
     void _startCooperativeSend(NimBLECharacteristic* characteristic, uint8_t* data, size_t length, uint8_t dataType);
